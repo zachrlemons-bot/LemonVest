@@ -899,6 +899,8 @@ async function advisorSignIn(){
   const emailEl=document.getElementById('advisor-email');
   const email=emailEl?emailEl.value.trim().toLowerCase():'';
   if(!pw){toast('Please enter your advisor password');return;}
+  // When Supabase is configured, email is required so a session is created for RLS
+  if(initSupabase() && !email){toast('Please enter your email address to sign in.');return;}
 
   const btn=document.querySelector('#advisor-signin-panel .btnp');
 
