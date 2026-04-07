@@ -929,13 +929,9 @@ async function advisorSignIn(){
   if(pw!==getAdvisorPassword()){toast('Incorrect advisor password');return;}
   document.getElementById('advisor-password').value='';
   advisorMode=true;
-  if(supabaseConfigured()){
-    if(btn){btn.textContent='Loading...';btn.disabled=true;}
-    await loadClientsIntoApp();
-    if(btn){btn.textContent='Sign in as Advisor';btn.disabled=false;}
-  } else {
-    loadClientsLocal();
-  }
+  if(btn){btn.textContent='Loading...';btn.disabled=true;}
+  await loadClientsIntoApp();
+  if(btn){btn.textContent='Sign in as Advisor';btn.disabled=false;}
   showScreen('s-home');
   startMsgPolling();
   updateNotifBadge();
@@ -949,13 +945,41 @@ function loadClientsLocal(){
 }
 
 async function loadClientsIntoApp(){
+  // Migrate any localStorage-only clients to Supabase before dropping the fallback
+  if(initSupabase()){
+    try{
+      const localData = loadDataLocal();
+      const fromLocal = localData ? (localData.clients || []) : [];
+      const seen = new Set(fromLocal.map(c => c && String(c.id)).filter(Boolean));
+      // Also pick up individual lv_client_<id> keys not already in the snapshot
+      for(const k of Object.keys(localStorage)){
+        if(!k.startsWith('lv_client_') || k.startsWith('lv_client_email_') || k === 'lv_client_reports') continue;
+        try{
+          const c = JSON.parse(localStorage.getItem(k));
+          if(c && c.id && !seen.has(String(c.id))){ seen.add(String(c.id)); fromLocal.push(c); }
+        }catch(e){}
+      }
+      if(fromLocal.length > 0){
+        const {data:dbRows} = await sb.from('clients').select('id');
+        const dbIds = new Set((dbRows||[]).map(r => String(r.id)));
+        for(const c of fromLocal){
+          if(c && c.id && !dbIds.has(String(c.id))){
+            console.log('loadClientsIntoApp: migrating client', c.id, 'to Supabase');
+            try{ await sb.from('clients').upsert(serializeClient(c), {onConflict:'id'}); }
+            catch(e){ console.error('loadClientsIntoApp: migration failed for client', c.id, e); }
+          }
+        }
+      }
+    }catch(e){ console.error('loadClientsIntoApp: migration error:', e); }
+  }
   const fromDB = await loadClients();
-  if(fromDB !== null){
-    CLIENTS = fromDB;
-  } else {
-    loadClientsLocal();
+  if(fromDB === null || fromDB.length === 0){
+    console.error('loadClientsIntoApp: Supabase returned', fromDB === null ? 'null' : 'an empty array', '— no clients loaded.');
+    CLIENTS = [];
+    activeClient = null;
     return;
   }
+  CLIENTS = fromDB;
   activeClient = CLIENTS[0]||null;
 }
 
