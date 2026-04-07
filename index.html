@@ -1116,29 +1116,13 @@ async function clientSignUp(){
       options:{data:{first_name:first,last_name:last}}
     });
     if(error){toast(error.message);return;}
-    // Create client record
+    // Create client record and immediately write to Supabase
     const c=createClientFromAccount({firstName:first,lastName:last,email});
-    // Only write to Supabase if a session is active (i.e. email confirmation is
-    // disabled). If confirmation is required, data.session is null and auth.uid()
-    // would be null, causing the RLS policy to silently block the upsert. In that
-    // case we persist locally and the record will sync on first login.
-    if(data.session){
-      await saveClient(c);
-    } else {
-      // No session yet — save locally only; sync will happen after email confirmation + login
-      const idx=CLIENTS.findIndex(x=>x.id===c.id);
-      if(idx>=0) CLIENTS[idx]=c; else CLIENTS.push(c);
-      try{
-        localStorage.setItem('lv_client_'+c.id, JSON.stringify(c));
-        if(c.email) localStorage.setItem('lv_client_email_'+c.email.toLowerCase(), JSON.stringify(c));
-        saveDataLocal();
-      }catch(e){}
-    }
+    await saveClient(c);
     portalClient=c;advisorMode=false;portalTab='dashboard';pDashMode='view';pGoalsMode='view';pExpMode='view';pInvestMode='view';
     renderPortal(c);showScreen('s-portal');
     startClientPolling(c);
-    const confirmMsg=data.session?'':'Check your email to confirm your account. ';
-    toast(confirmMsg+'Welcome, '+first+'!');
+    toast('Welcome, '+first+'!');
   } else {
     // Fallback: localStorage
     const accts=loadAccounts();
