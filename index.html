@@ -1116,8 +1116,17 @@ async function clientSignUp(){
       options:{data:{first_name:first,last_name:last}}
     });
     if(error){toast(error.message);return;}
-    // Create client record and immediately write to Supabase
-    const c=createClientFromAccount({firstName:first,lastName:last,email});
+    // The DB trigger already created the row — fetch it by email and update with full name/initials
+    let c;
+    const {data:existing}=await sb.from('clients').select('*').eq('email',email).single();
+    if(existing){
+      c=deserializeClient(existing);
+      c.name=first+' '+last;
+      c.initials=((first[0]||'?')+(last[0]||'?')).toUpperCase();
+    } else {
+      // Trigger hadn't fired yet — create the record directly
+      c=createClientFromAccount({firstName:first,lastName:last,email});
+    }
     await saveClient(c);
     portalClient=c;advisorMode=false;portalTab='dashboard';pDashMode='view';pGoalsMode='view';pExpMode='view';pInvestMode='view';
     renderPortal(c);showScreen('s-portal');
