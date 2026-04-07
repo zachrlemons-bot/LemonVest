@@ -4204,6 +4204,10 @@ function renderInvestmentsTab(c,el){
         +(overLimit?'<span style="font-size:10px;font-weight:700;background:#FCEBEB;color:#A32D2D;padding:2px 8px;border-radius:20px;">Over limit</span>':'')
         +'</div></div>'
         +'<div style="font-size:11px;color:var(--mt);margin-bottom:8px;">'+acct.desc+'</div>'
+        +'<div style="display:flex;align-items:center;gap:8px;margin-bottom:10px;">'
+        +'<span style="font-size:11px;color:var(--mt);white-space:nowrap;">Current balance: $</span>'
+        +'<input type="number" id="ainvbal-'+inst.uid+'" value="'+(inst.balance||'')+'" placeholder="0" style="width:110px;padding:5px 8px;font-size:13px;font-weight:700;border:1.5px solid var(--bd);border-radius:8px;" />'
+        +'</div>'
         +'<input type="range" id="ainv-'+inst.uid+'" min="0" max="'+maxSlide+'" step="25" value="'+current+'" style="width:100%;accent-color:var(--g);margin-bottom:6px;" oninput="aInvSlide(this.id.slice(5))" />'
         +'<div style="display:flex;align-items:center;justify-content:space-between;gap:12px;">'
         +'<div style="display:flex;align-items:center;gap:6px;">'
@@ -4232,21 +4236,19 @@ function renderInvestmentsTab(c,el){
       if(s.type==='range') s.addEventListener('input',()=>aInvUpdateTotals());
     });
     // Allocation pie
-    const pie=document.getElementById('inv-alloc-pie');
-    if(pie&&allInstances.length>0){
+    if(allInstances.length>0){
       const C=['#2D7A3A','#E8C932','#185FA5','#BA7517','#A32D2D','#4CAF62','#7B61FF','#F97316'];
       const instWithMo=allInstances.filter(({mo})=>mo>0);
-      if(instWithMo.length>0) new Chart(pie,{type:'doughnut',data:{labels:instWithMo.map(({uid,acct})=>acct.emoji+' '+acct.name),datasets:[{data:instWithMo.map(({mo})=>mo),backgroundColor:C,borderWidth:2,borderColor:'var(--cd)'}]},options:{responsive:true,maintainAspectRatio:false,plugins:{legend:{position:'bottom',labels:{boxWidth:8,font:{size:10},padding:4}},tooltip:{callbacks:{label:ctx=>'$'+ctx.raw.toLocaleString()+'/mo'}}}}});
+      if(instWithMo.length>0) mkChart('inv-alloc-pie',{type:'doughnut',data:{labels:instWithMo.map(({uid,acct})=>acct.emoji+' '+acct.name),datasets:[{data:instWithMo.map(({mo})=>mo),backgroundColor:C,borderWidth:2,borderColor:'var(--cd)'}]},options:{responsive:true,maintainAspectRatio:false,plugins:{legend:{position:'bottom',labels:{boxWidth:8,font:{size:10},padding:4}},tooltip:{callbacks:{label:ctx=>'$'+ctx.raw.toLocaleString()+'/mo'}}}}});
     }
     // 30-yr growth bar
-    const growBar=document.getElementById('inv-growth-bar');
-    if(growBar&&allInstances.length>0){
+    if(allInstances.length>0){
       const instW=allInstances.filter(({mo})=>mo>0);
       if(instW.length>0){
-        const C10=instW.map(({mo,acct})=>compoundCalc(mo,acct.avgReturn||0.10,10));
-        const C20=instW.map(({mo,acct})=>compoundCalc(mo,acct.avgReturn||0.10,20));
-        const C30=instW.map(({mo,acct})=>compoundCalc(mo,acct.avgReturn||0.10,30));
-        new Chart(growBar,{type:'bar',data:{labels:instW.map(({acct})=>acct.emoji+' '+acct.name),datasets:[{label:'10yr',data:C10,backgroundColor:'#4CAF62',borderRadius:3},{label:'20yr',data:C20,backgroundColor:'#2D7A3A',borderRadius:3},{label:'30yr',data:C30,backgroundColor:'#185FA5',borderRadius:3}]},options:{responsive:true,maintainAspectRatio:false,plugins:{legend:{position:'bottom',labels:{boxWidth:8,font:{size:10},padding:4}},tooltip:{callbacks:{label:ctx=>ctx.dataset.label+': '+fmtK(ctx.raw)}}},scales:{y:{ticks:{callback:v=>fmtK(v)},grid:{color:'var(--bd)'}},x:{ticks:{font:{size:10}}}}}});
+        const C10=instW.map(({mo,acct,bal})=>compoundCalc(mo,acct.avgReturn||0.10,10,bal));
+        const C20=instW.map(({mo,acct,bal})=>compoundCalc(mo,acct.avgReturn||0.10,20,bal));
+        const C30=instW.map(({mo,acct,bal})=>compoundCalc(mo,acct.avgReturn||0.10,30,bal));
+        mkChart('inv-growth-bar',{type:'bar',data:{labels:instW.map(({acct})=>acct.emoji+' '+acct.name),datasets:[{label:'10yr',data:C10,backgroundColor:'#4CAF62',borderRadius:3},{label:'20yr',data:C20,backgroundColor:'#2D7A3A',borderRadius:3},{label:'30yr',data:C30,backgroundColor:'#185FA5',borderRadius:3}]},options:{responsive:true,maintainAspectRatio:false,plugins:{legend:{position:'bottom',labels:{boxWidth:8,font:{size:10},padding:4}},tooltip:{callbacks:{label:ctx=>ctx.dataset.label+': '+fmtK(ctx.raw)}}},scales:{y:{ticks:{callback:v=>fmtK(v)},grid:{color:'var(--bd)'}},x:{ticks:{font:{size:10}}}}}});
       }
     }
   },60);
@@ -4317,6 +4319,8 @@ function aInvSave(){
   (c.accountInstances||[]).forEach(inst=>{
     const val=parseInt(document.getElementById('ainvn-'+inst.uid)?.value)||0;
     inst.monthly=val;
+    const balInp=document.getElementById('ainvbal-'+inst.uid);
+    if(balInp) inst.balance=parseFloat(balInp.value)||0;
   });
   saveData();toast('Investment allocations saved!');
   investViewMode='view';
@@ -4614,7 +4618,6 @@ function renderPInvestments(c,el){
       if(s.tagName==='INPUT'&&s.type==='range') s.addEventListener('input',()=>pInvUpdateTotals());
     });
     // Allocation pie (overview mode)
-    const pie=document.getElementById('pinv-alloc-pie');
     const pAllInst2=(allocs&&Object.keys(allocs).length>0)
       ?Object.entries(allocs).filter(([uid,mo])=>(mo||0)>0).map(([uid,mo])=>{
           const baseId=uid.replace(/_[0-9]+$/,'');
@@ -4623,20 +4626,19 @@ function renderPInvestments(c,el){
           return {uid,mo:Number(mo)||0,acct,bal};
         })
       :[];
-    if(pie&&pAllInst2.length>0){
+    if(pAllInst2.length>0){
       const C=['#2D7A3A','#E8C932','#185FA5','#BA7517','#A32D2D','#4CAF62','#7B61FF','#F97316'];
       const instWithMo=pAllInst2.filter(({mo})=>mo>0);
-      if(instWithMo.length>0) new Chart(pie,{type:'doughnut',data:{labels:instWithMo.map(({uid,acct})=>acct.emoji+' '+acct.name),datasets:[{data:instWithMo.map(({mo})=>mo),backgroundColor:C,borderWidth:2,borderColor:'var(--cd)'}]},options:{responsive:true,maintainAspectRatio:false,plugins:{legend:{position:'bottom',labels:{boxWidth:8,font:{size:10},padding:4}},tooltip:{callbacks:{label:ctx=>'$'+ctx.raw.toLocaleString()+'/mo'}}}}});
+      if(instWithMo.length>0) mkChart('pinv-alloc-pie',{type:'doughnut',data:{labels:instWithMo.map(({uid,acct})=>acct.emoji+' '+acct.name),datasets:[{data:instWithMo.map(({mo})=>mo),backgroundColor:C,borderWidth:2,borderColor:'var(--cd)'}]},options:{responsive:true,maintainAspectRatio:false,plugins:{legend:{position:'bottom',labels:{boxWidth:8,font:{size:10},padding:4}},tooltip:{callbacks:{label:ctx=>'$'+ctx.raw.toLocaleString()+'/mo'}}}}});
     }
     // 30-yr growth bar (overview mode)
-    const growBar=document.getElementById('pinv-growth-bar');
     if(growBar&&pAllInst2.length>0){
       const instW=pAllInst2.filter(({mo})=>mo>0);
       if(instW.length>0){
         const C10=instW.map(({mo,acct,bal})=>compoundCalc(mo,acct.avgReturn||0.10,10,bal));
         const C20=instW.map(({mo,acct,bal})=>compoundCalc(mo,acct.avgReturn||0.10,20,bal));
         const C30=instW.map(({mo,acct,bal})=>compoundCalc(mo,acct.avgReturn||0.10,30,bal));
-        new Chart(growBar,{type:'bar',data:{labels:instW.map(({acct})=>acct.emoji+' '+acct.name),datasets:[{label:'10yr',data:C10,backgroundColor:'#4CAF62',borderRadius:3},{label:'20yr',data:C20,backgroundColor:'#2D7A3A',borderRadius:3},{label:'30yr',data:C30,backgroundColor:'#185FA5',borderRadius:3}]},options:{responsive:true,maintainAspectRatio:false,plugins:{legend:{position:'bottom',labels:{boxWidth:8,font:{size:10},padding:4}},tooltip:{callbacks:{label:ctx=>ctx.dataset.label+': '+fmtK(ctx.raw)}}},scales:{y:{ticks:{callback:v=>fmtK(v)},grid:{color:'var(--bd)'}},x:{ticks:{font:{size:10}}}}}});
+        mkChart('pinv-growth-bar',{type:'bar',data:{labels:instW.map(({acct})=>acct.emoji+' '+acct.name),datasets:[{label:'10yr',data:C10,backgroundColor:'#4CAF62',borderRadius:3},{label:'20yr',data:C20,backgroundColor:'#2D7A3A',borderRadius:3},{label:'30yr',data:C30,backgroundColor:'#185FA5',borderRadius:3}]},options:{responsive:true,maintainAspectRatio:false,plugins:{legend:{position:'bottom',labels:{boxWidth:8,font:{size:10},padding:4}},tooltip:{callbacks:{label:ctx=>ctx.dataset.label+': '+fmtK(ctx.raw)}}},scales:{y:{ticks:{callback:v=>fmtK(v)},grid:{color:'var(--bd)'}},x:{ticks:{font:{size:10}}}}}});
       }
     }
   },60);
@@ -4711,7 +4713,7 @@ function renderCompoundProjections(allocs, ctx, c){
     ?Object.entries(allocs).filter(([uid,mo])=>(mo||0)>0).map(([uid,mo])=>{
         const baseId=uid.replace(/_[0-9]+$/,'');
         const acct=INVEST_ACCOUNTS.find(a=>a.id===baseId)||{name:uid,avgReturn:0.10,emoji:'💰'};
-        const bal=(c&&c.accountInstances||[]).find(i=>i.uid===uid)?.balance||0;
+        const bal=((c&&c.accountInstances)||[]).find(i=>i.uid===uid)?.balance||0;
         return {uid,mo:Number(mo)||0,acct,bal};
       })
     :[];
@@ -4719,7 +4721,7 @@ function renderCompoundProjections(allocs, ctx, c){
   const totalExistingBal=allInst.reduce((s,{bal})=>s+(bal||0),0);
   let html='<div class="card card-accent" style="margin-bottom:10px;">'
     +'<div class="ct">Projected portfolio value</div>'
-    +'<div style="font-size:11px;color:var(--mt);margin-bottom:12px;">Includes existing account balances'+(totalExistingBal>0?' (currently '+fmtK(totalExistingBal)+'  recorded)':'')+' plus monthly contributions growing at average annual returns per account type. Does not account for taxes or fees.</div>';
+    +'<div style="font-size:11px;color:var(--mt);margin-bottom:12px;">Includes existing account balances'+(totalExistingBal>0?' (currently '+fmtK(totalExistingBal)+' recorded)':'')+' plus monthly contributions growing at average annual returns per account type. Does not account for taxes or fees.</div>';
 
   if(allInst.length===0){
     const editFn=ctx==='client'?'pInvestMode=&quot;edit&quot;;renderPTab()':'investViewMode=&quot;edit&quot;;renderDashContent()';
@@ -4778,7 +4780,7 @@ function renderCompoundProjections(allocs, ctx, c){
       const C=['#2D7A3A','#E8C932','#185FA5','#BA7517','#A32D2D','#4CAF62','#7B61FF','#F97316'];
       return {label:inst.acct.emoji+' '+inst.acct.name,data:labels.map(yr=>Math.round(compoundCalc(inst.mo,inst.acct.avgReturn||0.10,yr,inst.bal||0))),borderColor:C[i%C.length],backgroundColor:'transparent',borderWidth:2,pointRadius:0,tension:0.3};
     });
-    new Chart(el2,{type:'line',data:{labels,datasets},options:{responsive:true,maintainAspectRatio:false,interaction:{mode:'index',intersect:false},plugins:{legend:{position:'bottom',labels:{boxWidth:8,font:{size:10},padding:4}},tooltip:{callbacks:{label:ctx=>ctx.dataset.label+': '+fmtK(ctx.raw)}}},scales:{y:{ticks:{callback:v=>fmtK(v)},grid:{color:'var(--bd)'}},x:{title:{display:true,text:'Years',font:{size:10}},ticks:{font:{size:10}}}}}});
+    mkChart(pfx+'proj-chart',{type:'line',data:{labels,datasets},options:{responsive:true,maintainAspectRatio:false,interaction:{mode:'index',intersect:false},plugins:{legend:{position:'bottom',labels:{boxWidth:8,font:{size:10},padding:4}},tooltip:{callbacks:{label:ctx=>ctx.dataset.label+': '+fmtK(ctx.raw)}}},scales:{y:{ticks:{callback:v=>fmtK(v)},grid:{color:'var(--bd)'}},x:{title:{display:true,text:'Years',font:{size:10}},ticks:{font:{size:10}}}}}});
   },60);
 
   return html;
