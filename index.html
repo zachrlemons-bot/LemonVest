@@ -1,4 +1,4 @@
-<!DOCTYPE html>
+2<!DOCTYPE html>
 <html lang="en">
 <head>
 <meta charset="UTF-8"/>
@@ -586,7 +586,7 @@ async function saveClient(c){
   if(initSupabase()){
     const row = serializeClient(c);
     const {error} = await sb.from('clients').upsert(row,{onConflict:'id'});
-    if(error) console.error('saveClient:',error);
+    if(error){console.error('saveClient:',error);toast('Could not save changes. Please check your connection.');}
   }
 }
 
@@ -1028,7 +1028,6 @@ async function clientSignIn(){
       // First login — create record
       c=createClientFromAccount({firstName:data.user.user_metadata?.first_name||email.split('@')[0],lastName:data.user.user_metadata?.last_name||'',email});
       await saveClient(c);
-      CLIENTS.push(c);
     } else {
       c=deserializeClient(rows);
       // Cache to localStorage so offline/future loads work
@@ -1100,12 +1099,27 @@ async function clientSignUp(){
     if(error){toast(error.message);return;}
     // Create client record
     const c=createClientFromAccount({firstName:first,lastName:last,email});
-    await saveClient(c);
-    CLIENTS.push(c);
+    // Only write to Supabase if a session is active (i.e. email confirmation is
+    // disabled). If confirmation is required, data.session is null and auth.uid()
+    // would be null, causing the RLS policy to silently block the upsert. In that
+    // case we persist locally and the record will sync on first login.
+    if(data.session){
+      await saveClient(c);
+    } else {
+      // No session yet — save locally only; sync will happen after email confirmation + login
+      const idx=CLIENTS.findIndex(x=>x.id===c.id);
+      if(idx>=0) CLIENTS[idx]=c; else CLIENTS.push(c);
+      try{
+        localStorage.setItem('lv_client_'+c.id, JSON.stringify(c));
+        if(c.email) localStorage.setItem('lv_client_email_'+c.email.toLowerCase(), JSON.stringify(c));
+        saveDataLocal();
+      }catch(e){}
+    }
     portalClient=c;advisorMode=false;portalTab='dashboard';pDashMode='view';pGoalsMode='view';pExpMode='view';pInvestMode='view';
     renderPortal(c);showScreen('s-portal');
     startClientPolling(c);
-    toast('Account created! Welcome, '+first+'!');
+    const confirmMsg=data.session?'':'Check your email to confirm your account. ';
+    toast(confirmMsg+'Welcome, '+first+'!');
   } else {
     // Fallback: localStorage
     const accts=loadAccounts();
@@ -1310,7 +1324,7 @@ function renderDash(){
     if(fresh) activeClient=fresh;
   }
   document.getElementById('dash-client-name').textContent=activeClient?activeClient.name:'';
-  document.getElementById('dash-nav').innerHTML=DASH_TABS.map(t=>`<button class="nb ${t===dashTab?'active':''}" onclick="setDashTab('${t}')">${t}</button>`).join('');
+  document.getElementById('dash-nav').innerHTML=DASH_TABS.map(t=>`<button class="nb ${t===dashTab?'active':''}" onclick="setDashTab('${t}')">${t.replace(/\b\w/g,c=>c.toUpperCase())}</button>`).join('');
   renderDashContent();
 }
 
@@ -2201,7 +2215,7 @@ function advisorDeleteGoal(i){
   const c=activeClient;
   showConfirmModal(
     'Remove goal?',
-    'Are you sure you want to remove <strong style="font-weight:700;">'+c.goals[i].name+'</strong>? This cannot be undone.',
+    'Are you sure you want to remove <strong style="font-weight:700;">'+escapeHtml(c.goals[i].name)+'</strong>? This cannot be undone.',
     'Yes, remove',
     async ()=>{
       c.goals.splice(i,1);
@@ -2895,11 +2909,12 @@ function removeClient(id){
   if(!c)return;
   showConfirmModal(
     'Remove client?',
-    'Are you sure you want to remove <strong style="font-weight:700;">'+c.name+'</strong>? Their account will be deleted and they will no longer be able to sign in.',
+    'Are you sure you want to remove <strong style="font-weight:700;">'+escapeHtml(c.name)+'</strong>? Their account will be deleted and they will no longer be able to sign in.',
     'Yes, delete',
     async function(){
       // 1. Remove from in-memory list
       const idx=CLIENTS.findIndex(x=>x.id===id);
+      if(idx<0) return;
       CLIENTS.splice(idx,1);
 
       // 2. Delete from Supabase DB
@@ -3726,10 +3741,10 @@ function clientSendMsg(){
 
 // Client polling — check for new advisor messages every 5s
 let clientPollInterval=null;
-function startClientPolling(c){
+async function startClientPolling(c){
   if(clientPollInterval) clearInterval(clientPollInterval);
-  // Run immediately on login
-  checkClientMessages(c);
+  // Run immediately on login and wait before starting the interval
+  await checkClientMessages(c);
   clientPollInterval=setInterval(()=>checkClientMessages(c),5000);
 }
 
@@ -3919,7 +3934,7 @@ function removeAccountInstance(uid,side){
   if((inst.monthly||0)>0){
     showConfirmModal(
       'Remove account?',
-      'Remove <strong style="font-weight:700;">'+inst.label+'</strong>? Its $'+inst.monthly.toLocaleString()+'/mo allocation will be cleared.',
+      'Remove <strong style="font-weight:700;">'+escapeHtml(inst.label)+'</strong>? Its $'+inst.monthly.toLocaleString()+'/mo allocation will be cleared.',
       'Yes, remove',
       ()=>{
         c.accountInstances=c.accountInstances.filter(i=>i.uid!==uid);
@@ -4751,7 +4766,7 @@ async function sendAdvAIChat(){
     const data=await res.json();
     const reply=data.content?.[0]?.text||'Sorry, could not get a response.';
     const typing=document.getElementById('adv-ai-typing');
-    if(typing) typing.outerHTML=`<div class="msg"><div class="bub bub-a">${reply.replace(/\n/g,'<br>')}</div></div>`;
+    if(typing) typing.outerHTML=`<div class="msg"><div class="bub bub-a">${escapeHtml(reply).replace(/\n/g,'<br>')}</div></div>`;
   }catch(e){
     const typing=document.getElementById('adv-ai-typing');
     if(typing) typing.outerHTML=`<div class="msg"><div class="bub bub-a">Connection error. Please try again.</div></div>`;
@@ -5496,7 +5511,7 @@ async function sendPortalChat(){
     const res=await fetch('https://api.anthropic.com/v1/messages',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({model:'claude-sonnet-4-20250514',max_tokens:700,system:sys,messages:[{role:'user',content:msg}]})});
     const data=await res.json();
     const reply=data.content?.[0]?.text||'Sorry, could not get a response.';
-    document.getElementById('p-typing').outerHTML=`<div class="msg"><div class="bub bub-a">${reply.replace(/\n/g,'<br>')}</div></div>`;
+    document.getElementById('p-typing').outerHTML=`<div class="msg"><div class="bub bub-a">${escapeHtml(reply).replace(/\n/g,'<br>')}</div></div>`;
   }catch(e){document.getElementById('p-typing').outerHTML=`<div class="msg"><div class="bub bub-a">Connection error. Please try again.</div></div>`;}
   msgs.scrollTop=msgs.scrollHeight;
 }
