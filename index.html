@@ -4444,6 +4444,7 @@ function renderPInvestments(c,el){
       +'<div class="ct">Investment summary</div>'
       +'<div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(140px,1fr));gap:1px;background:var(--bd);border-radius:8px;overflow:hidden;margin-bottom:0;">'
       +[
+        ...(totalBalance>0?[{l:'Total balance',v:'$'+totalBalance.toLocaleString()}]:[]),
         {l:'Budget for investing',v:'$'+totalInvestBudget.toLocaleString()+'/mo'},
         {l:'Allocated to accounts',v:'$'+totalAlloc.toLocaleString()+'/mo'},
         {l:'Unallocated',v:'$'+unalloc.toLocaleString()+'/mo'},
@@ -4456,11 +4457,13 @@ function renderPInvestments(c,el){
       +'</div>';
 
     // Build allInstances for charts & table
+    const totalBalance=(c.accountInstances||[]).reduce((a,i)=>a+(i.balance||0),0);
     const pAllInstances=(allocs&&Object.keys(allocs).length>0)
       ?Object.entries(allocs).filter(([uid,mo])=>(mo||0)>0).map(([uid,mo])=>{
           const baseId=uid.replace(/_[0-9]+$/,'');
           const acct=INVEST_ACCOUNTS.find(a=>a.id===baseId)||{name:uid,avgReturn:0.10,emoji:'💰',taxType:'',limit:null};
-          return {uid,mo:Number(mo)||0,acct};
+          const bal=(c.accountInstances||[]).find(i=>i.uid===uid)?.balance||0;
+          return {uid,mo:Number(mo)||0,acct,bal};
         })
       :[];
 
@@ -4478,21 +4481,21 @@ function renderPInvestments(c,el){
         +'<table style="width:100%;border-collapse:collapse;font-size:12px;">'
         +'<thead><tr style="border-bottom:2px solid var(--bd);">'
         +'<th style="text-align:left;padding:8px 10px;color:var(--mt);font-weight:600;">Account</th>'
-        +'<th style="text-align:left;padding:8px 8px;color:var(--mt);font-weight:600;">Tax treatment</th>'
+        +'<th style="text-align:right;padding:8px 8px;color:var(--mt);font-weight:600;">Balance</th>'
         +'<th style="text-align:right;padding:8px 8px;color:var(--mt);font-weight:600;">/mo</th>'
         +'<th style="text-align:right;padding:8px 8px;color:var(--mt);font-weight:600;">/yr</th>'
         +'<th style="text-align:right;padding:8px 8px;color:var(--mt);font-weight:600;">Limit</th>'
         +'<th style="text-align:right;padding:8px 8px;color:var(--mt);font-weight:600;">Status</th>'
         +'</tr></thead><tbody>';
-      let totalMo=0,totalYr=0;
-      pAllInstances.forEach(({uid,mo,acct})=>{
+      let totalMo=0,totalYr=0,totalBal=0;
+      pAllInstances.forEach(({uid,mo,acct,bal})=>{
         const yr=mo*12;
         const over=acct.limit&&yr>acct.limit;
         const label=(c.accountInstances||[]).find(i=>i.uid===uid)?.label||acct.name||uid;
-        totalMo+=mo; totalYr+=yr;
+        totalMo+=mo; totalYr+=yr; totalBal+=bal;
         html+='<tr style="border-bottom:0.5px solid var(--bd);">'
           +'<td style="padding:9px 10px;font-weight:600;">'+(acct.emoji||'💰')+' '+label+'</td>'
-          +'<td style="padding:9px 8px;color:var(--mt);">'+(acct.taxType||'—')+'</td>'
+          +'<td style="text-align:right;padding:9px 8px;font-weight:700;color:var(--g);">'+(bal>0?'$'+bal.toLocaleString():'<span style="color:var(--mt);font-weight:400;">—</span>')+'</td>'
           +'<td style="text-align:right;padding:9px 8px;font-weight:700;">$'+mo.toLocaleString()+'</td>'
           +'<td style="text-align:right;padding:9px 8px;">$'+yr.toLocaleString()+'</td>'
           +'<td style="text-align:right;padding:9px 8px;color:var(--mt);">'+(acct.limit?'$'+acct.limit.toLocaleString():'None')+'</td>'
@@ -4503,7 +4506,8 @@ function renderPInvestments(c,el){
           +'</td></tr>';
       });
       html+='<tr style="font-weight:700;border-top:2px solid var(--bd);background:var(--sf);">'
-        +'<td colspan="2" style="padding:9px 10px;">Total</td>'
+        +'<td style="padding:9px 10px;">Total</td>'
+        +'<td style="text-align:right;padding:9px 8px;color:var(--g);">'+(totalBal>0?'$'+totalBal.toLocaleString():'—')+'</td>'
         +'<td style="text-align:right;padding:9px 8px;">$'+totalMo.toLocaleString()+'/mo</td>'
         +'<td style="text-align:right;padding:9px 8px;">$'+totalYr.toLocaleString()+'/yr</td>'
         +'<td colspan="2"></td>'
@@ -4571,6 +4575,10 @@ function renderPInvestments(c,el){
         +(overLimit?'<span style="font-size:10px;font-weight:700;background:#FCEBEB;color:#A32D2D;padding:2px 8px;border-radius:20px;">Over limit</span>':'')
         +'</div></div>'
         +'<div style="font-size:11px;color:var(--mt);margin-bottom:8px;">'+acct.desc+'</div>'
+        +'<div style="display:flex;align-items:center;gap:8px;margin-bottom:10px;">'
+        +'<span style="font-size:11px;color:var(--mt);white-space:nowrap;">Current balance: $</span>'
+        +'<input type="number" id="pinvbal-'+inst.uid+'" value="'+(inst.balance||'')+'" placeholder="0" style="width:110px;padding:5px 8px;font-size:13px;font-weight:700;border:1.5px solid var(--bd);border-radius:8px;" />'
+        +'</div>'
         +'<input type="range" id="pinv-'+inst.uid+'" min="0" max="'+maxSlide+'" step="25" value="'+current+'" style="width:100%;accent-color:var(--g);margin-bottom:6px;" oninput="pInvSlide(this.id.slice(5))" />'
         +'<div style="display:flex;align-items:center;justify-content:space-between;gap:12px;">'
         +'<div style="display:flex;align-items:center;gap:6px;">'
@@ -4679,6 +4687,8 @@ function pInvSave(){
   (c.accountInstances||[]).forEach(inst=>{
     const val=parseInt(document.getElementById('pinvn-'+inst.uid)?.value)||0;
     inst.monthly=val;
+    const balInp=document.getElementById('pinvbal-'+inst.uid);
+    if(balInp) inst.balance=parseFloat(balInp.value)||0;
   });
   saveClient(c);toast('Investment allocations saved!');
   pInvestMode='view';
