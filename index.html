@@ -557,7 +557,7 @@ function initSupabase(){
 async function loadClients(){
   if(!initSupabase()) return null;
   try{
-    const {data,error} = await sb.from('clients').select('*').order('id',{ascending:true});
+    const {data,error} = await sb.from('clients').select('*').eq('advisor_id',ADVISOR_ID).order('id',{ascending:true});
     if(error){console.error('loadClients:',error.message||JSON.stringify(error));return null;}
     return data.map(deserializeClient);
   } catch(e){
@@ -633,6 +633,7 @@ function serializeClient(c){
     nw_history: JSON.stringify(c.nwHistory||[]),
     spending_history: JSON.stringify(c.spendingHistory||[]),
     last_summarized_month: c.lastSummarizedMonth||null,
+    advisor_id: c.advisorId||ADVISOR_ID,
   };
 }
 
@@ -674,6 +675,7 @@ function deserializeClient(row){
     nwHistory: tryParse(row.nw_history,[]),
     spendingHistory: tryParse(row.spending_history,[]),
     lastSummarizedMonth: row.last_summarized_month||null,
+    advisorId: row.advisor_id||ADVISOR_ID,
   };
 }
 
@@ -889,6 +891,7 @@ function showAdvisorLogin(){
 
 // Advisor email whitelist — these Supabase accounts are granted advisor access
 const ADVISOR_EMAILS=['zachrlemons@gmail.com'];
+const ADVISOR_ID='zachrlemons@gmail.com';
 
 async function advisorSignIn(){
   const pw=document.getElementById('advisor-password').value;
@@ -920,6 +923,7 @@ async function advisorSignIn(){
     if(btn){btn.textContent='Sign in as Advisor';btn.disabled=false;}
     showScreen('s-home');
     startMsgPolling();
+    subscribeAdvisorClients();
     updateNotifBadge();
     toast('Welcome back!');
     return;
@@ -934,8 +938,26 @@ async function advisorSignIn(){
   if(btn){btn.textContent='Sign in as Advisor';btn.disabled=false;}
   showScreen('s-home');
   startMsgPolling();
+  subscribeAdvisorClients();
   updateNotifBadge();
   toast('Welcome back!');
+}
+
+let advisorRealtimeChannel=null;
+function subscribeAdvisorClients(){
+  if(!initSupabase()) return;
+  if(advisorRealtimeChannel){sb.removeChannel(advisorRealtimeChannel);advisorRealtimeChannel=null;}
+  advisorRealtimeChannel=sb.channel('advisor-clients')
+    .on('postgres_changes',{event:'*',schema:'public',table:'clients',filter:'advisor_id=eq.'+ADVISOR_ID},
+      async ()=>{
+        const fresh=await loadClients();
+        if(fresh){
+          CLIENTS=fresh;
+          if(activeClient){const f=CLIENTS.find(c=>c.id===activeClient.id);if(f) activeClient=f;}
+          if(advisorMode) renderHome();
+        }
+      })
+    .subscribe();
 }
 
 function loadClientsLocal(){
@@ -1180,7 +1202,8 @@ function createClientFromAccount(acct){
     goals:[],budget:[],transactions:[],
     debts:[],messages:[],nwHistory:[],spendingHistory:[],lastSummarizedMonth:null,
     alerts:[],
-    notes:['Account created '+new Date().toLocaleDateString()+'. Onboarding in progress.']
+    notes:['Account created '+new Date().toLocaleDateString()+'. Onboarding in progress.'],
+    advisorId:ADVISOR_ID,
   };
 }
 
