@@ -836,8 +836,8 @@ function logout(){
   const picker=document.getElementById('login-role-picker');
   if(picker) picker.style.display='block';
   if(typeof _lvLoggerShowFAB==='function') _lvLoggerShowFAB(false);
-  if(initSupabase()) sb.auth.signOut();
   showScreen('s-login');
+  if(initSupabase()) sb.auth.signOut();
 }
 
 // ═══════════════════════════════════════
@@ -7214,30 +7214,31 @@ function shouldShowNudge(categoryName){
 // ═══════════════════════════════════════
 document.getElementById('s-login').classList.add('active');
 
-// Restore session on page refresh
-(async function restoreSession(){
-  if(!initSupabase()) return;
-  const {data:{session}} = await sb.auth.getSession();
-  if(!session) return;
-  const email = session.user.email;
-  if(ADVISOR_EMAILS.includes(email)){
-    advisorMode=true;
-    await loadClientsIntoApp();
-    showScreen('s-home');
-    startMsgPolling();
-    subscribeAdvisorClients();
-    updateNotifBadge();
-  } else {
-    const {data:row} = await sb.from('clients').select('*').eq('email',email).single();
-    if(row){
-      const c=deserializeClient(row);
-      portalClient=c;advisorMode=false;portalTab='dashboard';
-      pDashMode='view';pGoalsMode='view';pExpMode='view';pInvestMode='view';
-      renderPortal(c);showScreen('s-portal');
-      startClientPolling(c);
+// Restore session on page refresh — fires exactly once with the initial session state
+if(initSupabase()){
+  sb.auth.onAuthStateChange(async (event, session)=>{
+    if(event!=='INITIAL_SESSION') return;
+    if(!session) return;
+    const email=session.user.email;
+    if(ADVISOR_EMAILS.includes(email)){
+      advisorMode=true;
+      await loadClientsIntoApp();
+      showScreen('s-home');
+      startMsgPolling();
+      subscribeAdvisorClients();
+      updateNotifBadge();
+    } else {
+      const {data:row}=await sb.from('clients').select('*').eq('email',email).single();
+      if(row){
+        const c=deserializeClient(row);
+        portalClient=c;advisorMode=false;portalTab='dashboard';
+        pDashMode='view';pGoalsMode='view';pExpMode='view';pInvestMode='view';
+        renderPortal(c);showScreen('s-portal');
+        startClientPolling(c);
+      }
     }
-  }
-})();
+  });
+}
 
 // Re-attach Enter key listeners for login forms (since onkeydown removed for syntax safety)
 document.addEventListener('keydown', function(e){
