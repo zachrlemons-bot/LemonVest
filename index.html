@@ -4318,7 +4318,115 @@ function aInvSave(){
 // ── CLIENT PORTAL VIEW ────────────────────────────────────────────────────
 let pInvestMode='view';
 
+// ── INVESTMENTS ONBOARDING WIZARD ────────────────────────────────────────────
+let _iWizStep=1;
+function isInvestSetupDone(c){try{return localStorage.getItem('lv_isetup_'+c.id)==='1';}catch(e){return false;}}
+function markInvestSetupDone(c){try{localStorage.setItem('lv_isetup_'+c.id,'1');}catch(e){}}
+
+function renderInvestOnboarding(c,el){
+  const pct=_iWizStep===1?33:_iWizStep===2?66:100;
+  const pb='<div class="wizard-progress-track"><div class="wizard-progress-fill" style="width:'+pct+'%"></div></div>';
+
+  if(_iWizStep===1){
+    el.innerHTML='<div class="wizard-step" style="max-width:480px;margin:0 auto;">'
+      +pb
+      +'<div style="text-align:center;margin-bottom:28px;">'
+      +'<div style="font-size:40px;margin-bottom:12px;">📈</div>'
+      +'<div style="font-size:22px;font-weight:700;margin-bottom:8px;">Let\'s set up your investments</div>'
+      +'<div style="font-size:13px;color:var(--mt);line-height:1.6;">Takes 2 minutes. Do you currently have any investment or savings accounts?</div>'
+      +'</div>'
+      +'<div style="display:flex;flex-direction:column;gap:10px;">'
+      +'<button class="btnp" style="padding:18px;font-size:15px;width:100%;border-radius:14px;" onclick="_iWizStep=2;renderPTab()">Yes, I have accounts</button>'
+      +'<button class="btns" style="padding:16px;font-size:14px;width:100%;border-radius:14px;" onclick="_iWizStep=3;renderPTab()">No, I don\'t invest yet</button>'
+      +'</div></div>';
+
+  } else if(_iWizStep===2){
+    if(!c.accountInstances) getInvestData(c);
+    const instances=c.accountInstances;
+    let cards='';
+    INVEST_ACCOUNTS.forEach(acct=>{
+      const mine=instances.filter(i=>i.baseId===acct.id);
+      cards+='<div style="border:1px solid var(--bd);border-radius:12px;padding:14px 16px;margin-bottom:10px;">'
+        +'<div style="display:flex;align-items:center;gap:10px;">'
+        +'<span style="font-size:22px;">'+acct.emoji+'</span>'
+        +'<div style="flex:1;">'
+        +'<div style="font-size:14px;font-weight:700;">'+acct.name+'</div>'
+        +'<div style="font-size:11px;color:var(--mt);">'+acct.desc+'</div>'
+        +'</div>'
+        +'<button onclick="addAccountInstance(\''+acct.id+'\',\'client\')" style="font-family:inherit;font-size:12px;font-weight:700;padding:6px 14px;border-radius:20px;cursor:pointer;border:1.5px solid var(--g);background:var(--gll);color:var(--gd);">+ Add'+(mine.length>0?' another':'')+'</button>'
+        +'</div>';
+      mine.forEach(inst=>{
+        cards+='<div style="display:flex;align-items:center;gap:10px;padding:9px 0;border-top:0.5px solid var(--bd);margin-top:8px;">'
+          +'<span style="color:var(--g);font-weight:700;">✓</span>'
+          +'<div style="flex:1;font-size:13px;font-weight:600;">'+escapeHtml(inst.label)+'</div>'
+          +'<div style="display:flex;align-items:center;gap:5px;">'
+          +'<span style="font-size:11px;color:var(--mt);">Balance: $</span>'
+          +'<input type="number" id="ibal-'+inst.uid+'" value="'+(inst.balance||'')+'" placeholder="0" style="width:90px;padding:5px 8px;font-size:13px;font-weight:700;border:1.5px solid var(--bd);border-radius:8px;"/>'
+          +'</div></div>';
+      });
+      cards+='</div>';
+    });
+    const hasAny=instances.length>0;
+    el.innerHTML='<div class="wizard-step" style="max-width:540px;margin:0 auto;">'
+      +pb
+      +'<div style="text-align:center;margin-bottom:20px;">'
+      +'<div style="font-size:22px;font-weight:700;margin-bottom:6px;">Add your accounts</div>'
+      +'<div style="font-size:13px;color:var(--mt);">Click + Add for each account you have, then enter your current balance.</div>'
+      +'</div>'
+      +cards
+      +'<div style="display:flex;gap:8px;margin-top:8px;">'
+      +'<button class="btns" onclick="_iWizStep=1;renderPTab()" style="padding:10px 20px;">← Back</button>'
+      +'<button class="btnp" style="flex:1;padding:14px;font-size:14px;'+(hasAny?'':'opacity:0.5;cursor:not-allowed;')+'" '+(hasAny?'':'disabled')+' onclick="iWizSaveBalances()">Continue →</button>'
+      +'</div></div>';
+
+  } else {
+    if(!c.accountInstances) getInvestData(c);
+    const instances=c.accountInstances;
+    const hasAccounts=instances.length>0;
+    const total=instances.reduce((a,i)=>a+(i.balance||0),0);
+    el.innerHTML='<div class="wizard-step" style="max-width:480px;margin:0 auto;">'
+      +pb
+      +'<div style="text-align:center;margin-bottom:24px;">'
+      +'<div style="font-size:40px;margin-bottom:12px;">'+(hasAccounts?'🎉':'🌱')+'</div>'
+      +'<div style="font-size:22px;font-weight:700;margin-bottom:8px;">'+(hasAccounts?'You\'re all set!':'No problem!')+'</div>'
+      +'<div style="font-size:13px;color:var(--mt);line-height:1.7;">'
+      +(hasAccounts
+          ?'Your accounts are added. Next, set your <strong>monthly contributions</strong> — how much you put in each account every month.'
+          :'When you\'re ready to start investing, come back here. Your advisor will help you figure out the best place to start.')
+      +'</div></div>'
+      +(hasAccounts&&total>0
+          ?'<div class="card card-accent" style="margin-bottom:16px;">'
+            +'<div class="ct">Total invested so far</div>'
+            +'<div style="font-size:28px;font-weight:700;color:var(--g);">$'+total.toLocaleString()+'</div>'
+            +'<div style="font-size:11px;color:var(--mt);margin-top:4px;">across '+instances.length+' account'+(instances.length>1?'s':'')+'</div>'
+            +'</div>'
+          :'')
+      +'<button class="btnp" style="width:100%;padding:16px;font-size:15px;border-radius:14px;" onclick="iWizFinish()">'
+      +(hasAccounts?'Set monthly contributions →':'Got it')+'</button>'
+      +(!hasAccounts?'<button class="btns" style="width:100%;margin-top:10px;padding:12px;" onclick="_iWizStep=2;renderPTab()">Actually, I do have accounts</button>':'')
+      +'</div>';
+  }
+}
+function iWizSaveBalances(){
+  const c=portalClient||activeClient;
+  (c.accountInstances||[]).forEach(inst=>{
+    const inp=document.getElementById('ibal-'+inst.uid);
+    if(inp) inst.balance=parseFloat(inp.value)||0;
+  });
+  _iWizStep=3;
+  saveClient(c);
+  renderPTab();
+}
+function iWizFinish(){
+  const c=portalClient||activeClient;
+  markInvestSetupDone(c);
+  _iWizStep=1;
+  pInvestMode='edit';
+  renderPTab();
+}
+
 function renderPInvestments(c,el){
+  if(!isInvestSetupDone(c)){renderInvestOnboarding(c,el);return;}
   const {investItems,totalInvestBudget,allocs,activeAccounts,activeIds}=getInvestData(c);
   const totalAlloc=Object.values(allocs).reduce((a,v)=>a+(v||0),0);
   const unalloc=totalInvestBudget-totalAlloc;
