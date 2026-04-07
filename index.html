@@ -4036,12 +4036,14 @@ function getEmergencyFundSaved(c){
   return efGoals.reduce((a,g)=>a+(g.current||0),0);
 }
 
-function compoundCalc(monthly, annualRate, years){
-  // FV of monthly contributions: PMT * [((1+r)^n - 1) / r]
-  if(monthly<=0||years<=0) return 0;
+function compoundCalc(monthly, annualRate, years, presentValue=0){
+  // FV = PV*(1+r)^n + PMT*[((1+r)^n - 1)/r]
+  if(years<=0) return presentValue||0;
   const r=annualRate/12;
   const n=years*12;
-  return monthly*((Math.pow(1+r,n)-1)/r);
+  const fvPmt=(monthly||0)>0?(monthly)*((Math.pow(1+r,n)-1)/r):0;
+  const fvPv=(presentValue||0)*Math.pow(1+r,n);
+  return fvPmt+fvPv;
 }
 
 function fmtK(v){
@@ -4068,12 +4070,14 @@ function renderInvestmentsTab(c,el){
 
   if(investViewMode==='view'){
     // ── VIEW: clean snapshot + projections ─────────────────────────────
+    const aTotalBalance=(c.accountInstances||[]).reduce((a,i)=>a+(i.balance||0),0);
 
     // Summary tiles
     html+='<div class="card card-accent" style="margin-bottom:10px;">'
       +'<div class="ct">Investment summary</div>'
       +'<div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(140px,1fr));gap:1px;background:var(--bd);border-radius:8px;overflow:hidden;margin-bottom:0;">'
       +[
+        ...(aTotalBalance>0?[{l:'Total balance',v:'$'+aTotalBalance.toLocaleString()}]:[]),
         {l:'Budget for investing',v:'$'+totalInvestBudget.toLocaleString()+'/mo'},
         {l:'Allocated to accounts',v:'$'+totalAlloc.toLocaleString()+'/mo'},
         {l:'Unallocated',v:'$'+unalloc.toLocaleString()+'/mo'},
@@ -4091,7 +4095,8 @@ function renderInvestmentsTab(c,el){
     ?Object.entries(allocs).filter(([uid,mo])=>(mo||0)>0).map(([uid,mo])=>{
         const baseId=uid.replace(/_[0-9]+$/,'');
         const acct=INVEST_ACCOUNTS.find(a=>a.id===baseId)||{name:uid,avgReturn:0.10,emoji:'💰',taxType:'',limit:null};
-        return {uid,mo:Number(mo)||0,acct};
+        const bal=(c.accountInstances||[]).find(i=>i.uid===uid)?.balance||0;
+        return {uid,mo:Number(mo)||0,acct,bal};
       })
     :[];
 
@@ -4109,20 +4114,22 @@ function renderInvestmentsTab(c,el){
         +'<thead><tr style="border-bottom:2px solid var(--bd);">'
         +'<th style="text-align:left;padding:8px 10px;color:var(--mt);font-weight:600;">Account</th>'
         +'<th style="text-align:left;padding:8px 8px;color:var(--mt);font-weight:600;">Tax treatment</th>'
+        +'<th style="text-align:right;padding:8px 8px;color:var(--mt);font-weight:600;">Balance</th>'
         +'<th style="text-align:right;padding:8px 8px;color:var(--mt);font-weight:600;">/mo</th>'
         +'<th style="text-align:right;padding:8px 8px;color:var(--mt);font-weight:600;">/yr</th>'
         +'<th style="text-align:right;padding:8px 8px;color:var(--mt);font-weight:600;">Limit</th>'
         +'<th style="text-align:right;padding:8px 8px;color:var(--mt);font-weight:600;">Status</th>'
         +'</tr></thead><tbody>';
-      let totalMo=0, totalYr=0;
-      allInstances.forEach(({uid,mo,acct})=>{
+      let totalMo=0, totalYr=0, totalBal=0;
+      allInstances.forEach(({uid,mo,acct,bal})=>{
         const yr=mo*12;
         const over=acct.limit&&yr>acct.limit;
         const label=(c.accountInstances||[]).find(i=>i.uid===uid)?.label||acct.name||uid;
-        totalMo+=mo; totalYr+=yr;
+        totalMo+=mo; totalYr+=yr; totalBal+=bal;
         html+='<tr style="border-bottom:0.5px solid var(--bd);">'
           +'<td style="padding:9px 10px;font-weight:600;">'+(acct.emoji||'💰')+' '+label+'</td>'
           +'<td style="padding:9px 8px;color:var(--mt);">'+(acct.taxType||'—')+'</td>'
+          +'<td style="text-align:right;padding:9px 8px;font-weight:700;color:var(--g);">'+(bal>0?'$'+bal.toLocaleString():'<span style="color:var(--mt);font-weight:400;">—</span>')+'</td>'
           +'<td style="text-align:right;padding:9px 8px;font-weight:700;">$'+mo.toLocaleString()+'</td>'
           +'<td style="text-align:right;padding:9px 8px;">$'+yr.toLocaleString()+'</td>'
           +'<td style="text-align:right;padding:9px 8px;color:var(--mt);">'+(acct.limit?'$'+acct.limit.toLocaleString():'None')+'</td>'
@@ -4134,6 +4141,7 @@ function renderInvestmentsTab(c,el){
       });
       html+='<tr style="font-weight:700;border-top:2px solid var(--bd);background:var(--sf);">'
         +'<td colspan="2" style="padding:9px 10px;">Total</td>'
+        +'<td style="text-align:right;padding:9px 8px;color:var(--g);">'+(totalBal>0?'$'+totalBal.toLocaleString():'—')+'</td>'
         +'<td style="text-align:right;padding:9px 8px;">$'+totalMo.toLocaleString()+'/mo</td>'
         +'<td style="text-align:right;padding:9px 8px;">$'+totalYr.toLocaleString()+'/yr</td>'
         +'<td colspan="2"></td>'
@@ -4146,7 +4154,7 @@ function renderInvestmentsTab(c,el){
 
   } else if(investViewMode==='projections'){
     // ── PROJECTIONS: compound growth ───────────────────────────────────
-    html+=renderCompoundProjections(allocs,'advisor');
+    html+=renderCompoundProjections(allocs,'advisor',c);
 
   } else {
     // ── EDIT: sliders for each account ─────────────────────────────────
@@ -4440,6 +4448,7 @@ function renderPInvestments(c,el){
 
   if(pInvestMode==='view'){
     // ── OVERVIEW: summary tiles + table + charts ──────────────────────────
+    const totalBalance=(c.accountInstances||[]).reduce((a,i)=>a+(i.balance||0),0);
     html+='<div class="card card-accent" style="margin-bottom:10px;">'
       +'<div class="ct">Investment summary</div>'
       +'<div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(140px,1fr));gap:1px;background:var(--bd);border-radius:8px;overflow:hidden;margin-bottom:0;">'
@@ -4457,7 +4466,6 @@ function renderPInvestments(c,el){
       +'</div>';
 
     // Build allInstances for charts & table
-    const totalBalance=(c.accountInstances||[]).reduce((a,i)=>a+(i.balance||0),0);
     const pAllInstances=(allocs&&Object.keys(allocs).length>0)
       ?Object.entries(allocs).filter(([uid,mo])=>(mo||0)>0).map(([uid,mo])=>{
           const baseId=uid.replace(/_[0-9]+$/,'');
@@ -4526,7 +4534,7 @@ function renderPInvestments(c,el){
 
   } else if(pInvestMode==='projections'){
     // ── PROJECTIONS: compound growth ─────────────────────────────────────
-    html+=renderCompoundProjections(allocs,'client');
+    html+=renderCompoundProjections(allocs,'client',c);
 
   } else {
     // ── EDIT: sliders — identical layout to advisor ───────────────────────
@@ -4611,7 +4619,8 @@ function renderPInvestments(c,el){
       ?Object.entries(allocs).filter(([uid,mo])=>(mo||0)>0).map(([uid,mo])=>{
           const baseId=uid.replace(/_[0-9]+$/,'');
           const acct=INVEST_ACCOUNTS.find(a=>a.id===baseId)||{name:uid,avgReturn:0.10,emoji:'💰',taxType:'',limit:null};
-          return {uid,mo:Number(mo)||0,acct};
+          const bal=(c.accountInstances||[]).find(i=>i.uid===uid)?.balance||0;
+          return {uid,mo:Number(mo)||0,acct,bal};
         })
       :[];
     if(pie&&pAllInst2.length>0){
@@ -4624,9 +4633,9 @@ function renderPInvestments(c,el){
     if(growBar&&pAllInst2.length>0){
       const instW=pAllInst2.filter(({mo})=>mo>0);
       if(instW.length>0){
-        const C10=instW.map(({mo,acct})=>compoundCalc(mo,acct.avgReturn||0.10,10));
-        const C20=instW.map(({mo,acct})=>compoundCalc(mo,acct.avgReturn||0.10,20));
-        const C30=instW.map(({mo,acct})=>compoundCalc(mo,acct.avgReturn||0.10,30));
+        const C10=instW.map(({mo,acct,bal})=>compoundCalc(mo,acct.avgReturn||0.10,10,bal));
+        const C20=instW.map(({mo,acct,bal})=>compoundCalc(mo,acct.avgReturn||0.10,20,bal));
+        const C30=instW.map(({mo,acct,bal})=>compoundCalc(mo,acct.avgReturn||0.10,30,bal));
         new Chart(growBar,{type:'bar',data:{labels:instW.map(({acct})=>acct.emoji+' '+acct.name),datasets:[{label:'10yr',data:C10,backgroundColor:'#4CAF62',borderRadius:3},{label:'20yr',data:C20,backgroundColor:'#2D7A3A',borderRadius:3},{label:'30yr',data:C30,backgroundColor:'#185FA5',borderRadius:3}]},options:{responsive:true,maintainAspectRatio:false,plugins:{legend:{position:'bottom',labels:{boxWidth:8,font:{size:10},padding:4}},tooltip:{callbacks:{label:ctx=>ctx.dataset.label+': '+fmtK(ctx.raw)}}},scales:{y:{ticks:{callback:v=>fmtK(v)},grid:{color:'var(--bd)'}},x:{ticks:{font:{size:10}}}}}});
       }
     }
@@ -4696,19 +4705,21 @@ function pInvSave(){
 }
 
 // ── SHARED: renderCompoundProjections ────────────────────────────────────
-function renderCompoundProjections(allocs, ctx){
+function renderCompoundProjections(allocs, ctx, c){
   const pfx = ctx==='client'?'p':'a';
   const allInst=(allocs&&Object.keys(allocs).length>0)
     ?Object.entries(allocs).filter(([uid,mo])=>(mo||0)>0).map(([uid,mo])=>{
         const baseId=uid.replace(/_[0-9]+$/,'');
         const acct=INVEST_ACCOUNTS.find(a=>a.id===baseId)||{name:uid,avgReturn:0.10,emoji:'💰'};
-        return {uid,mo:Number(mo)||0,acct};
+        const bal=(c&&c.accountInstances||[]).find(i=>i.uid===uid)?.balance||0;
+        return {uid,mo:Number(mo)||0,acct,bal};
       })
     :[];
 
+  const totalExistingBal=allInst.reduce((s,{bal})=>s+(bal||0),0);
   let html='<div class="card card-accent" style="margin-bottom:10px;">'
     +'<div class="ct">Projected portfolio value</div>'
-    +'<div style="font-size:11px;color:var(--mt);margin-bottom:12px;">Assumes consistent monthly contributions and average annual returns per account type. Does not account for taxes or fees.</div>';
+    +'<div style="font-size:11px;color:var(--mt);margin-bottom:12px;">Includes existing account balances'+(totalExistingBal>0?' (currently '+fmtK(totalExistingBal)+'  recorded)':'')+' plus monthly contributions growing at average annual returns per account type. Does not account for taxes or fees.</div>';
 
   if(allInst.length===0){
     const editFn=ctx==='client'?'pInvestMode=&quot;edit&quot;;renderPTab()':'investViewMode=&quot;edit&quot;;renderDashContent()';
@@ -4719,7 +4730,7 @@ function renderCompoundProjections(allocs, ctx){
   }
 
   const years=[10,20,30];
-  const totals=years.map(yr=>allInst.reduce((sum,{mo,acct})=>sum+compoundCalc(mo,acct.avgReturn||0.10,yr),0));
+  const totals=years.map(yr=>allInst.reduce((sum,{mo,acct,bal})=>sum+compoundCalc(mo,acct.avgReturn||0.10,yr,bal),0));
 
   html+='<div style="display:grid;grid-template-columns:repeat(3,1fr);gap:1px;background:var(--bd);border-radius:8px;overflow:hidden;margin-bottom:14px;">'
     +years.map((yr,i)=>'<div style="background:var(--cd);padding:12px 14px;text-align:center;">'
@@ -4737,20 +4748,23 @@ function renderCompoundProjections(allocs, ctx){
     +'<table style="width:100%;border-collapse:collapse;font-size:12px;">'
     +'<thead><tr style="border-bottom:2px solid var(--bd);">'
     +'<th style="text-align:left;padding:8px 10px;color:var(--mt);font-weight:600;">Account</th>'
+    +'<th style="text-align:right;padding:8px 8px;color:var(--mt);font-weight:600;">Balance now</th>'
     +'<th style="text-align:right;padding:8px 8px;color:var(--mt);font-weight:600;">/mo</th>'
     +'<th style="text-align:right;padding:8px 8px;color:var(--mt);font-weight:600;">Avg return</th>'
     +'<th style="text-align:right;padding:8px 8px;color:var(--mt);font-weight:600;">10yr</th>'
     +'<th style="text-align:right;padding:8px 8px;color:var(--mt);font-weight:600;">20yr</th>'
     +'<th style="text-align:right;padding:8px 8px;color:var(--mt);font-weight:600;">30yr</th>'
     +'</tr></thead><tbody>';
-  allInst.forEach(({uid,mo,acct})=>{
+  allInst.forEach(({uid,mo,acct,bal})=>{
+    const r=acct.avgReturn||0.10;
     html+='<tr style="border-bottom:0.5px solid var(--bd);">'
       +'<td style="padding:9px 10px;font-weight:600;">'+(acct.emoji||'💰')+' '+acct.name+'</td>'
+      +'<td style="text-align:right;padding:9px 8px;font-weight:700;color:var(--g);">'+(bal>0?'$'+bal.toLocaleString():'<span style="color:var(--mt);font-weight:400;">—</span>')+'</td>'
       +'<td style="text-align:right;padding:9px 8px;font-weight:700;">$'+mo.toLocaleString()+'</td>'
-      +'<td style="text-align:right;padding:9px 8px;color:var(--mt);">'+Math.round((acct.avgReturn||0.10)*100)+'%</td>'
-      +'<td style="text-align:right;padding:9px 8px;">'+fmtK(compoundCalc(mo,acct.avgReturn||0.10,10))+'</td>'
-      +'<td style="text-align:right;padding:9px 8px;">'+fmtK(compoundCalc(mo,acct.avgReturn||0.10,20))+'</td>'
-      +'<td style="text-align:right;padding:9px 8px;font-weight:700;color:var(--g);">'+fmtK(compoundCalc(mo,acct.avgReturn||0.10,30))+'</td>'
+      +'<td style="text-align:right;padding:9px 8px;color:var(--mt);">'+Math.round(r*100)+'%</td>'
+      +'<td style="text-align:right;padding:9px 8px;">'+fmtK(compoundCalc(mo,r,10,bal))+'</td>'
+      +'<td style="text-align:right;padding:9px 8px;">'+fmtK(compoundCalc(mo,r,20,bal))+'</td>'
+      +'<td style="text-align:right;padding:9px 8px;font-weight:700;color:var(--g);">'+fmtK(compoundCalc(mo,r,30,bal))+'</td>'
       +'</tr>';
   });
   html+='</tbody></table></div></div>';
@@ -4762,7 +4776,7 @@ function renderCompoundProjections(allocs, ctx){
     const labels=Array.from({length:31},(_,i)=>i);
     const datasets=allInst.map((inst,i)=>{
       const C=['#2D7A3A','#E8C932','#185FA5','#BA7517','#A32D2D','#4CAF62','#7B61FF','#F97316'];
-      return {label:inst.acct.emoji+' '+inst.acct.name,data:labels.map(yr=>Math.round(compoundCalc(inst.mo,inst.acct.avgReturn||0.10,yr))),borderColor:C[i%C.length],backgroundColor:'transparent',borderWidth:2,pointRadius:0,tension:0.3};
+      return {label:inst.acct.emoji+' '+inst.acct.name,data:labels.map(yr=>Math.round(compoundCalc(inst.mo,inst.acct.avgReturn||0.10,yr,inst.bal||0))),borderColor:C[i%C.length],backgroundColor:'transparent',borderWidth:2,pointRadius:0,tension:0.3};
     });
     new Chart(el2,{type:'line',data:{labels,datasets},options:{responsive:true,maintainAspectRatio:false,interaction:{mode:'index',intersect:false},plugins:{legend:{position:'bottom',labels:{boxWidth:8,font:{size:10},padding:4}},tooltip:{callbacks:{label:ctx=>ctx.dataset.label+': '+fmtK(ctx.raw)}}},scales:{y:{ticks:{callback:v=>fmtK(v)},grid:{color:'var(--bd)'}},x:{title:{display:true,text:'Years',font:{size:10}},ticks:{font:{size:10}}}}}});
   },60);
