@@ -3622,7 +3622,7 @@ function renderPortal(c){
       : '')
     + '</div></div>'
     + '<div class="nav-row" id="portal-nav">'
-    + tabs.map(t=>'<button class="nb '+(t===portalTab?'active':'')+'" onclick="setPTab(\''+t+'\')">'+t+'</button>').join('')
+    + tabs.map(t=>'<button class="nb '+(t===portalTab?'active':'')+'" onclick="setPTab(\''+t+'\')">'+t.replace(/\b\w/g,c=>c.toUpperCase())+'</button>').join('')
     + '</div><div id="portal-body"></div>';
   renderPTab();
 }
