@@ -3354,253 +3354,421 @@ function startMsgPolling(){
 // PORTAL STATE & ENTRY POINT
 // ═══════════════════════════════════════
 // ═══════════════════════════════════════
-// SETUP WIZARD (3-step onboarding)
+// SETUP WIZARD (12-step client onboarding)
 // ═══════════════════════════════════════
-function renderWizard(c,el){
-  if(!c.wStep) c.wStep=1;
-  if(!c.wExp) c.wExp=[];
-  if(!c.wGoals) c.wGoals=[];
 
-  function stepBadge(n){
-    const done=n<c.wStep, active=n===c.wStep;
-    return '<div style="width:26px;height:26px;border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:12px;font-weight:700;margin:0 auto 4px;background:'+(done?'var(--g)':active?'var(--y)':'var(--sf)')+';color:'+(done?'#fff':active?'var(--gd)':'var(--mt)')+';">'+(done?'&#10003;':n)+'</div>';
-  }
-  const pct=Math.round((c.wStep/3)*100);
-  const progressBar='<div class="wizard-progress-track"><div class="wizard-progress-fill" style="width:'+pct+'%"></div></div>';
-  const stepBar=progressBar+'<div style="display:flex;gap:4px;align-items:flex-start;margin-bottom:24px;">'
-    +'<div style="flex:1;text-align:center;">'+stepBadge(1)+'<div style="font-size:11px;font-weight:600;color:'+(c.wStep===1?'var(--g)':'var(--mt)')+';">Income</div></div>'
-    +'<div style="flex:0 0 20px;border-top:2px dashed var(--bd);margin-top:13px;"></div>'
-    +'<div style="flex:1;text-align:center;">'+stepBadge(2)+'<div style="font-size:11px;font-weight:600;color:'+(c.wStep===2?'var(--g)':'var(--mt)')+';">Expenses</div></div>'
-    +'<div style="flex:0 0 20px;border-top:2px dashed var(--bd);margin-top:13px;"></div>'
-    +'<div style="flex:1;text-align:center;">'+stepBadge(3)+'<div style="font-size:11px;font-weight:600;color:'+(c.wStep===3?'var(--g)':'var(--mt)')+';">Goals</div></div>'
+// Step definitions for expense steps 2–10.
+// wExp stores income sources [{name,amount}].
+// Budget items for steps 2–10 go into c.budget with a wizardStep marker.
+const _WSD = [
+  null, // 0 unused
+  {num:1,key:'income',title:'Income'},
+  {num:2,key:'giving',title:'Giving',
+   items:[{name:'Church/tithe',cat:'Giving'},{name:'Charity',cat:'Giving'},{name:'Donations',cat:'Giving'}],
+   dCat:'Giving'},
+  {num:3,key:'savings',title:'Savings',
+   note:'This is for planned saving this month — not money already saved.',
+   items:[{name:'Emergency fund contribution',cat:'Savings / Investments'},{name:'General savings',cat:'Savings / Investments'}],
+   dCat:'Savings / Investments'},
+  {num:4,key:'housing',title:'Housing',
+   items:[
+     {name:'Mortgage or Rent',cat:'Housing / Rent'},{name:'Water',cat:'Utilities'},
+     {name:'Electricity',cat:'Electricity'},{name:'Gas/heat',cat:'Utilities'},
+     {name:'Cable/internet',cat:'Internet'},{name:'Trash',cat:'Utilities'},{name:'HOA',cat:'Housing / Rent'}],
+   dCat:'Housing / Rent'},
+  {num:5,key:'transportation',title:'Transportation',
+   items:[{name:'Gas',cat:'Gas'},{name:'Car maintenance',cat:'Transportation'},
+     {name:'Parking',cat:'Parking'},{name:'Tolls',cat:'Transportation'}],
+   dCat:'Transportation'},
+  {num:6,key:'food',title:'Food',
+   items:[{name:'Groceries',cat:'Groceries'},{name:'Restaurants',cat:'Dining Out'},{name:'Coffee shops',cat:'Coffee'}],
+   dCat:'Groceries'},
+  {num:7,key:'personal',title:'Personal',
+   items:[{name:'Clothing',cat:'Clothing'},{name:'Phone bill',cat:'Phone'},
+     {name:'Fun money',cat:'Other'},{name:'Hair and personal care',cat:'Personal Care'},
+     {name:'Subscriptions',cat:'Subscriptions'}],
+   dCat:'Personal Care'},
+  {num:8,key:'lifestyle',title:'Lifestyle',
+   items:[{name:'Pet care',cat:'Pet expenses'},{name:'Child care',cat:'Childcare / Kids'},
+     {name:'Entertainment',cat:'Entertainment'},{name:'Miscellaneous',cat:'Other'}],
+   dCat:'Other'},
+  {num:9,key:'health',title:'Health',
+   items:[{name:'Gym membership',cat:'Gym / Fitness'},{name:'Medicine',cat:'Healthcare / Medical'},
+     {name:'Vitamins and supplements',cat:'Healthcare / Medical'},{name:'Doctor visits',cat:'Healthcare / Medical'}],
+   dCat:'Healthcare / Medical'},
+  {num:10,key:'insurance',title:'Insurance',
+   items:[{name:'Health insurance',cat:'Health Insurance'},{name:'Auto insurance',cat:'Car Insurance'},
+     {name:'Homeowners or renters insurance',cat:'Housing / Rent'},{name:'Life insurance',cat:'Other'},
+     {name:'Identity theft protection',cat:'Other'}],
+   dCat:'Other'},
+  {num:11,key:'debts',title:'Debts'},
+  {num:12,key:'summary',title:'Budget Snapshot'},
+];
+const _WLABELS=['Income','Giving','Savings','Housing','Transportation','Food','Personal','Lifestyle','Health','Insurance','Debts','Summary'];
+const _WTOTAL=12;
+
+function renderWizard(c,el){
+  if(!c.wStep||c.wStep<1) c.wStep=1;
+  if(!c.wExp) c.wExp=[];    // income sources: [{name, amount}]
+  if(!c.wDebts) c.wDebts=[];
+  if(!c.budget) c.budget=[];
+
+  const pct=Math.round((c.wStep/_WTOTAL)*100);
+  const pb='<div class="wizard-progress-track" style="margin-bottom:6px;"><div class="wizard-progress-fill" style="width:'+pct+'%"></div></div>'
+    +'<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:20px;">'
+    +'<div style="font-size:12px;color:var(--mt);">Step '+c.wStep+' of '+_WTOTAL+'</div>'
+    +'<div style="font-size:12px;font-weight:700;color:var(--g);">'+_WLABELS[c.wStep-1]+'</div>'
     +'</div>';
 
+  // Retrieve saved amount for a preset item in a specific wizard step
+  function _savedAmt(stepNum,name){
+    const b=(c.budget||[]).find(x=>x.wizardStep===stepNum&&x.name===name);
+    return b?(b.amount||0):0;
+  }
+
+  // Retrieve custom-added items for a wizard step
+  function _customItems(stepNum){
+    return (c.budget||[]).filter(x=>x.wizardStep===stepNum&&x.isCustom);
+  }
+
+  // ── Step 1: Income ────────────────────────────────────────────────
   if(c.wStep===1){
-    el.innerHTML='<div class="wizard-step" style="max-width:480px;margin:0 auto;">'
-      +'<div style="text-align:center;margin-bottom:20px;"><div style="font-size:22px;font-weight:700;">Build your budget</div>'
-      +'<div style="font-size:13px;color:var(--mt);margin-top:4px;">Takes 2 minutes. Start with your income.</div></div>'
-      +stepBar
-      +'<div class="card"><div style="font-size:16px;font-weight:700;margin-bottom:6px;">Monthly take-home pay?</div>'
-      +'<div style="font-size:13px;color:var(--mt);margin-bottom:16px;">What actually hits your bank account each month after taxes.</div>'
-      +'<div style="display:flex;align-items:center;gap:8px;margin-bottom:6px;">'
-      +'<span style="font-size:24px;font-weight:700;color:var(--mt);">$</span>'
-      +'<input type="number" id="w-income" placeholder="0" value="'+(c.income||'')+'" style="font-size:24px;font-weight:700;padding:12px;border:2px solid var(--bd);border-radius:10px;flex:1;" oninput="lvGreenOnInput(this)":\'var(--bd)\'"/>'
+    const totalInc=(c.wExp||[]).reduce((a,s)=>a+s.amount,0);
+    let srcRows='';
+    (c.wExp||[]).forEach((s,i)=>{
+      srcRows+='<div style="display:flex;align-items:center;gap:10px;padding:10px 0;border-bottom:1px solid var(--bd);">'
+        +'<div style="flex:1;font-size:14px;font-weight:500;">'+s.name+'</div>'
+        +'<div style="font-size:14px;font-weight:700;color:#2D7A3A;">$'+s.amount.toLocaleString()+'/mo</div>'
+        +'<button class="btnd" style="font-size:10px;padding:2px 8px;" onclick="wRemoveIncome('+i+')">&times;</button>'
+        +'</div>';
+    });
+
+    const chips=['Primary job','Spouse income','Side hustle','Freelance']
+      .map(n=>'<button class="btns" style="font-size:12px;padding:4px 12px;" onclick="wQuickIncome(\''+n+'\')">'+n+'</button>').join('');
+
+    el.innerHTML='<div class="wizard-step" style="max-width:520px;margin:0 auto;">'
+      +'<div style="font-size:22px;font-weight:700;margin-bottom:4px;">Income</div>'
+      +'<div style="font-size:13px;color:var(--mt);margin-bottom:16px;">Add your monthly take-home income after taxes. You can list multiple sources.</div>'
+      +pb
+      +(srcRows
+        ?'<div class="card" style="margin-bottom:14px;">'
+          +(totalInc>0?'<div style="display:flex;justify-content:space-between;align-items:center;padding-bottom:8px;margin-bottom:4px;">'
+            +'<div style="font-size:11px;font-weight:700;color:var(--mt);">TOTAL MONTHLY INCOME</div>'
+            +'<div style="font-size:16px;font-weight:700;color:#2D7A3A;">$'+totalInc.toLocaleString()+'</div></div>':'')
+          +srcRows+'</div>'
+        :'')
+      +'<div class="card" style="margin-bottom:14px;">'
+      +'<div style="font-size:13px;font-weight:600;color:var(--mt);margin-bottom:10px;">Add an income source</div>'
+      +'<div style="display:flex;flex-wrap:wrap;gap:6px;margin-bottom:12px;">'+chips+'</div>'
+      +'<div style="display:flex;gap:8px;align-items:flex-end;flex-wrap:wrap;">'
+      +'<div class="fg" style="flex:1;min-width:130px;"><label class="flb">Source name</label>'
+      +'<input type="text" id="w-iname" placeholder="e.g. Primary job"/></div>'
+      +'<div style="display:flex;flex-direction:column;gap:2px;"><label class="flb">Monthly ($)</label>'
+      +'<input type="number" id="w-iamt" placeholder="0" style="width:120px;padding:8px 10px;"/></div>'
+      +'<button class="btny" style="padding:9px 16px;white-space:nowrap;" onclick="wAddIncome()">+ Add</button>'
       +'</div>'
-      +'<button class="btnp" style="width:100%;padding:14px;font-size:15px;margin-top:10px;" onclick="wNext1()">Next: Add expenses &#x2192;</button>'
-      +'</div></div>';
-
-  } else if(c.wStep===2){
-    const total=c.wExp.reduce((a,e)=>a+e.amt,0);
-    const debtMin=(c.wDebts||[]).reduce((a,d)=>a+(d.monthly||0),0);
-    const left=(c.income||0)-total-debtMin;
-    let expList='';
-    if(c.wExp.length>0){
-      expList='<div class="card card-accent" style="margin-bottom:12px;"><div class="ct">Expenses added ('+c.wExp.length+')</div>';
-      c.wExp.forEach((e,i)=>{
-        expList+='<div style="display:flex;justify-content:space-between;align-items:center;padding:9px 0;border-bottom:0.5px solid var(--bd);">'
-          +'<div><div style="font-size:13px;font-weight:700;">'+e.name+'</div><div style="font-size:11px;color:var(--mt);">'+e.cat+'</div></div>'
-          +'<div style="display:flex;align-items:center;gap:8px;"><span style="font-size:14px;font-weight:700;color:#A32D2D;">$'+e.amt.toLocaleString()+'/mo</span>'
-          +'<button class="btnd" style="font-size:10px;padding:2px 8px;" onclick="wRemoveExp('+i+')">x</button></div></div>';
-      });
-      expList+='</div>';
-    }
-
-    let debtList='';
-    if((c.wDebts||[]).length>0){
-      debtList='<div class="card card-accent" style="margin-bottom:12px;"><div class="ct">Debts added ('+(c.wDebts||[]).length+')</div>';
-      (c.wDebts||[]).forEach((d,i)=>{
-        debtList+='<div style="display:flex;justify-content:space-between;align-items:center;padding:9px 0;border-bottom:0.5px solid var(--bd);">'
-          +'<div><div style="font-size:13px;font-weight:700;">'+d.name+'</div>'
-          +'<div style="font-size:11px;color:var(--mt);">$'+d.balance.toLocaleString()+' balance · '+(d.rate?d.rate+'% rate':'no rate')+'</div></div>'
-          +'<div style="display:flex;align-items:center;gap:8px;"><span style="font-size:14px;font-weight:700;color:#A32D2D;">$'+d.monthly.toLocaleString()+'/mo</span>'
-          +'<button class="btnd" style="font-size:10px;padding:2px 8px;" onclick="wRemoveDebt('+i+')">x</button></div></div>';
-      });
-      debtList+='</div>';
-    }
-
-    const catOptions=(typeof EXP_CATS!=='undefined'?EXP_CATS:['Housing / Rent','Groceries','Transportation','Health Insurance','Utilities','Subscriptions','Other']).map(cat=>'<option>'+cat+'</option>').join('');
-    el.innerHTML='<div class="wizard-step" style="max-width:540px;margin:0 auto;">'
-      +'<div style="text-align:center;margin-bottom:16px;"><div style="font-size:22px;font-weight:700;">Add your expenses & debts</div>'
-      +'<div style="font-size:13px;color:var(--mt);margin-top:4px;">Include every regular monthly expense — rent, groceries, subscriptions, car, everything.</div></div>'
-      +stepBar
-      +'<div class="mgrid" style="margin-bottom:14px;">'
-      +'<div class="mc"><div class="ml">Monthly income</div><div class="mv">$'+(c.income||0).toLocaleString()+'</div></div>'
-      +'<div class="mc"><div class="ml">Expenses</div><div class="mv r">$'+total.toLocaleString()+'</div></div>'
-      +(debtMin>0?'<div class="mc"><div class="ml">Debt payments</div><div class="mv r">$'+debtMin.toLocaleString()+'</div></div>':'')
-      +'<div class="mc"><div class="ml">Left over</div><div class="mv" style="color:'+(left>=0?'#2D7A3A':'#A32D2D')+';">$'+left.toLocaleString()+'</div></div>'
       +'</div>'
-      +expList
+      +'<button class="btnp" style="width:100%;padding:13px;font-size:14px;" onclick="wIncomeNext()">Continue &#x2192;</button>'
+      +'</div>';
 
-      // ── Expense add form ──────────────────
-      +'<div class="card" style="margin-bottom:12px;"><div style="font-size:15px;font-weight:700;margin-bottom:14px;">Add an expense</div>'
-      +'<div style="display:flex;align-items:center;gap:8px;margin-bottom:10px;">'
-      +'<span style="font-size:22px;font-weight:700;color:var(--mt);">$</span>'
-      +'<input type="number" id="w-eamt" placeholder="0" style="font-size:22px;font-weight:700;padding:10px;border:2px solid var(--bd);border-radius:10px;flex:1;" oninput="lvGreenOnInput(this)":\'var(--bd)\'"/>'
+  // ── Steps 2–10: Expense categories ───────────────────────────────
+  } else if(c.wStep>=2&&c.wStep<=10){
+    const def=_WSD[c.wStep];
+    const cItems=_customItems(c.wStep);
+
+    let rows='';
+    def.items.forEach(item=>{
+      const amt=_savedAmt(c.wStep,item.name);
+      const safeN=item.name.replace(/"/g,'&quot;').replace(/'/g,'&#39;');
+      rows+='<div style="display:flex;align-items:center;gap:12px;padding:10px 0;border-bottom:1px solid var(--bd);">'
+        +'<div style="flex:1;font-size:14px;font-weight:500;">'+item.name+'</div>'
+        +'<div style="display:flex;align-items:center;gap:4px;">'
+        +'<span style="font-size:13px;color:var(--mt);">$</span>'
+        +'<input type="number" class="wexp-inp" data-step="'+c.wStep+'" data-name="'+safeN+'" data-cat="'+item.cat+'" placeholder="0" value="'+(amt||'')+'" style="width:110px;padding:8px 10px;font-size:14px;font-weight:600;border:1.5px solid var(--bd);border-radius:8px;text-align:right;"/>'
+        +'</div></div>';
+    });
+
+    cItems.forEach(ci=>{
+      const safeN=ci.name.replace(/'/g,"\\'");
+      rows+='<div style="display:flex;align-items:center;gap:12px;padding:10px 0;border-bottom:1px solid var(--bd);">'
+        +'<div style="flex:1;font-size:14px;font-weight:500;color:var(--gd);">'+ci.name+'</div>'
+        +'<div style="display:flex;align-items:center;gap:8px;">'
+        +'<span style="font-size:13px;color:var(--mt);">$</span>'
+        +'<span style="font-size:14px;font-weight:700;width:80px;text-align:right;">'+ci.amount.toLocaleString()+'</span>'
+        +'<button class="btnd" style="font-size:10px;padding:2px 8px;" onclick="wRemoveCustomItem('+c.wStep+',\''+safeN+'\')">&#x2715;</button>'
+        +'</div></div>';
+    });
+
+    const noteHtml=def.note
+      ?'<div style="font-size:12px;color:var(--mt);padding:8px 12px;background:var(--sf);border-radius:8px;margin-bottom:12px;">'+def.note+'</div>'
+      :'';
+
+    el.innerHTML='<div class="wizard-step" style="max-width:520px;margin:0 auto;">'
+      +'<div style="font-size:22px;font-weight:700;margin-bottom:4px;">'+def.title+'</div>'
+      +'<div style="font-size:13px;color:var(--mt);margin-bottom:16px;">Enter your monthly amounts. Leave blank for anything that doesn\'t apply.</div>'
+      +pb
+      +noteHtml
+      +'<div class="card" style="margin-bottom:14px;">'+rows+'</div>'
+      +'<div class="card" style="margin-bottom:14px;">'
+      +'<div style="font-size:13px;font-weight:600;color:var(--mt);margin-bottom:10px;">Add a custom item</div>'
+      +'<div style="display:flex;gap:8px;align-items:flex-end;flex-wrap:wrap;">'
+      +'<div class="fg" style="flex:1;min-width:130px;"><label class="flb">Name</label>'
+      +'<input type="text" id="w-cname" placeholder="e.g. '+def.items[0].name+'"/></div>'
+      +'<div style="display:flex;flex-direction:column;gap:2px;"><label class="flb">Monthly ($)</label>'
+      +'<input type="number" id="w-camt" placeholder="0" style="width:120px;padding:8px 10px;"/></div>'
+      +'<button class="btny" style="padding:9px 16px;white-space:nowrap;" onclick="wAddCustomItem('+c.wStep+',\''+def.dCat+'\')">+ Add</button>'
+      +'</div>'
+      +'</div>'
+      +'<div style="display:flex;gap:8px;">'
+      +'<button class="btns" onclick="wExpBack('+c.wStep+')" style="padding:10px 20px;">&#x2190; Back</button>'
+      +'<button class="btnp" style="flex:1;padding:13px;font-size:14px;" onclick="wExpNext('+c.wStep+')">Continue &#x2192;</button>'
+      +'</div>'
+      +'</div>';
+
+  // ── Step 11: Debts ───────────────────────────────────────────────
+  } else if(c.wStep===11){
+    let debtRows='';
+    (c.wDebts||[]).forEach((d,i)=>{
+      debtRows+='<div style="display:flex;justify-content:space-between;align-items:center;padding:10px 0;border-bottom:1px solid var(--bd);">'
+        +'<div><div style="font-size:14px;font-weight:600;">'+d.name+'</div>'
+        +'<div style="font-size:11px;color:var(--mt);">$'+d.balance.toLocaleString()+' balance'+(d.rate?' · '+d.rate+'%':'')+'</div></div>'
+        +'<div style="display:flex;align-items:center;gap:8px;">'
+        +'<div style="font-size:13px;font-weight:700;color:#A32D2D;">$'+d.monthly.toLocaleString()+'/mo</div>'
+        +'<button class="btnd" style="font-size:10px;padding:2px 8px;" onclick="wRemoveDebt('+i+')">&#x2715;</button>'
+        +'</div></div>';
+    });
+
+    const dPresets=['IRS or back taxes','Credit card','Auto loan','401k loan','Student loan','Bank loan','Medical debt','Real estate','Family loan','Other'];
+    const dOpts=dPresets.map(p=>'<option>'+p+'</option>').join('');
+
+    el.innerHTML='<div class="wizard-step" style="max-width:520px;margin:0 auto;">'
+      +'<div style="font-size:22px;font-weight:700;margin-bottom:4px;">Debts</div>'
+      +'<div style="font-size:13px;color:var(--mt);margin-bottom:16px;">List any outstanding debts so your dashboard reflects your full financial picture. Everything here is optional.</div>'
+      +pb
+      +((c.wDebts||[]).length>0
+        ?'<div class="card" style="margin-bottom:14px;"><div style="font-size:13px;font-weight:700;margin-bottom:2px;">Debts added ('+c.wDebts.length+')</div>'+debtRows+'</div>'
+        :'')
+      +'<div class="card" style="margin-bottom:14px;">'
+      +'<div style="font-size:13px;font-weight:600;color:var(--mt);margin-bottom:12px;">Add a debt</div>'
+      +'<div class="fr" style="margin-bottom:10px;">'
+      +'<div class="fg"><label class="flb">Debt type</label><select id="w-dtype">'+dOpts+'</select></div>'
+      +'<div class="fg"><label class="flb">Custom name (optional)</label>'
+      +'<input type="text" id="w-dname" placeholder="Override the name above"/></div>'
       +'</div>'
       +'<div class="fr" style="margin-bottom:10px;">'
-      +'<div class="fg"><label class="flb">Expense name</label><input type="text" id="w-ename" placeholder="e.g. Rent, Netflix, Groceries"/></div>'
-      +'<div class="fg"><label class="flb">Category</label><select id="w-ecat">'+catOptions+'</select></div>'
-      +'</div>'
-      +'<button class="btny" style="width:100%;padding:12px;font-size:14px;" onclick="wAddExp()">+ Add this expense</button>'
-      +'</div>'
-
-      // ── Debt add section ──────────────────
-      +'<div style="background:var(--yl);border-radius:12px;padding:12px 16px;margin-bottom:10px;border-left:4px solid var(--y);">'
-      +'<div style="font-size:12px;font-weight:700;color:var(--yd);margin-bottom:2px;">💳 Do you have any debts?</div>'
-      +'<div style="font-size:11px;color:var(--yd);">Car loans, student loans, credit cards, mortgages — add them below so your free margin is accurate.</div>'
-      +'</div>'
-      +debtList
-      +'<div class="card" style="margin-bottom:12px;"><div style="font-size:15px;font-weight:700;margin-bottom:14px;">Add a debt <span style="font-size:12px;color:var(--mt);font-weight:400;">(optional)</span></div>'
-      +'<div class="fr" style="margin-bottom:10px;">'
-      +'<div class="fg"><label class="flb">Debt name</label><input type="text" id="w-dname" placeholder="e.g. Car loan, Student loan"/></div>'
-      +'<div class="fg"><label class="flb">Type</label>'
-      +'<select id="w-dtype"><option>Car loan</option><option>Student loan</option><option>Credit card</option><option>Mortgage</option><option>Personal loan</option><option>Medical debt</option><option>Other</option></select>'
-      +'</div></div>'
-      +'<div class="fr" style="margin-bottom:10px;">'
-      +'<div class="fg"><label class="flb">Total balance owed ($)</label><input type="number" id="w-dbalance" placeholder="0"/></div>'
-      +'<div class="fg"><label class="flb">Minimum payment ($/mo)</label><input type="number" id="w-dmonthly" placeholder="0"/></div>'
-      +'</div>'
-      +'<div class="fr" style="margin-bottom:12px;">'
+      +'<div class="fg"><label class="flb">Current balance ($)</label><input type="number" id="w-dbalance" placeholder="0"/></div>'
       +'<div class="fg"><label class="flb">Interest rate (%)</label><input type="number" id="w-drate" placeholder="e.g. 6.9" step="0.1"/></div>'
-      +'<div class="fg" style="display:flex;align-items:flex-end;"><button class="btns" style="width:100%;padding:11px;font-size:13px;" onclick="wAddDebt()">+ Add debt</button></div>'
       +'</div>'
-      +'</div>'
-
-      +'<div style="display:flex;gap:8px;margin-top:8px;">'
-      +'<button class="btns" onclick="wBack()" style="padding:10px 20px;">&#x2190; Back</button>'
-      +'<button class="btnp" style="flex:1;padding:13px;font-size:14px;" onclick="wNext2()" '+(c.wExp.length===0?'disabled style="opacity:0.5;cursor:not-allowed;"':'')+'>Next: Set goals &#x2192;</button>'
-      +'</div></div>';
-
-  } else if(c.wStep===3){
-    const totalExp2=c.wExp.reduce((a,e)=>a+e.amt,0);
-    const margin2=(c.income||0)-totalExp2;
-    const goalTotal=(c.wGoals||[]).reduce((a,g)=>a+(g.monthly||0),0);
-    let goalList='';
-    if((c.wGoals||[]).length>0){
-      goalList='<div class="card card-accent" style="margin-bottom:12px;"><div class="ct">Goals added</div>';
-      c.wGoals.forEach((g,i)=>{
-        goalList+='<div style="display:flex;justify-content:space-between;align-items:center;padding:9px 0;border-bottom:0.5px solid var(--bd);">'
-          +'<div><div style="font-size:13px;font-weight:700;">'+g.name+'</div>'
-          +'<div style="font-size:11px;color:var(--mt);">Target $'+g.target.toLocaleString()+' · $'+g.monthly.toLocaleString()+'/mo</div></div>'
-          +'<button class="btnd" style="font-size:10px;padding:2px 8px;" onclick="wRemoveGoal('+i+')">x</button></div>';
-      });
-      goalList+='</div>';
-    }
-    el.innerHTML='<div class="wizard-step" style="max-width:540px;margin:0 auto;">'
-      +'<div style="text-align:center;margin-bottom:16px;"><div style="font-size:22px;font-weight:700;">Set your goals</div>'
-      +'<div style="font-size:13px;color:var(--mt);margin-top:4px;">What are you saving toward? (optional)</div></div>'
-      +stepBar
-      +'<div style="background:var(--gll);border-radius:12px;padding:14px 18px;margin-bottom:14px;border-left:4px solid var(--g);">'
-      +'<div style="font-size:10px;font-weight:700;color:var(--gd);margin-bottom:4px;">YOUR FREE MARGIN AFTER ALL EXPENSES</div>'
-      +'<div style="font-size:28px;font-weight:700;color:var(--g);">$'+margin2.toLocaleString()+'<span style="font-size:13px;font-weight:400;color:var(--mt);">/month</span></div>'
-      +(goalTotal>0?'<div style="font-size:12px;color:var(--mt);margin-top:4px;">$'+goalTotal.toLocaleString()+'/mo going to goals · $'+(margin2-goalTotal).toLocaleString()+' still unallocated</div>':'')
-      +'</div>'
-      +goalList
-      +'<div class="card"><div style="font-size:15px;font-weight:700;margin-bottom:14px;">Add a goal <span style="font-size:12px;color:var(--mt);font-weight:400;">(optional)</span></div>'
-      +'<div class="fg" style="margin-bottom:10px;"><label class="flb">Goal type</label>'
-      +'<select id="w-gpreset" onchange="goalPresetFill(\'w-g\')">'
-      +goalPresetOptions()
-      +'</select></div>'
-      +'<div class="fr" style="margin-bottom:10px;">'
-      +'<div class="fg"><label class="flb">Goal name</label><input type="text" id="w-gname" placeholder="e.g. Emergency fund, Vacation"/></div>'
-      +'<div class="fg"><label class="flb">Target amount ($)</label><input type="number" id="w-gtarget" placeholder="5000"/></div>'
-      +'</div>'
-      +'<div id="w-g-hint" style="font-size:11px;color:var(--mt);margin:-4px 0 8px;display:none;"></div>'
       +'<div class="fr" style="margin-bottom:12px;">'
-      +'<div class="fg"><label class="flb">Already saved ($)</label><input type="number" id="w-gsaved" placeholder="0"/></div>'
-      +'<div class="fg"><label class="flb">Save monthly ($)</label><input type="number" id="w-gmonthly" placeholder="'+Math.round(Math.max(0,margin2)*0.3)+'"/></div>'
+      +'<div class="fg"><label class="flb">Minimum monthly payment ($)</label><input type="number" id="w-dmonthly" placeholder="0"/></div>'
+      +'<div class="fg" style="display:flex;align-items:flex-end;">'
+      +'<button class="btny" style="width:100%;padding:9px;" onclick="wAddDebt()">+ Add debt</button>'
+      +'</div></div>'
       +'</div>'
-      +'<button class="btny" style="width:100%;padding:12px;font-size:14px;" onclick="wAddGoal()">+ Add this goal</button>'
+      +'<div style="display:flex;gap:8px;">'
+      +'<button class="btns" onclick="wGoStep(10)" style="padding:10px 20px;">&#x2190; Back</button>'
+      +'<button class="btnp" style="flex:1;padding:13px;font-size:14px;" onclick="wGoStep(12)">Continue &#x2192;</button>'
       +'</div>'
-      +'<div style="display:flex;gap:8px;margin-top:8px;">'
-      +'<button class="btns" onclick="wBack()" style="padding:10px 20px;">&#x2190; Back</button>'
-      +'<button class="btnp" style="flex:1;padding:14px;font-size:15px;" onclick="wFinish()">Finish — show my dashboard &#x2192;</button>'
-      +'</div></div>';
+      +'</div>';
+
+  // ── Step 12: Budget Snapshot ─────────────────────────────────────
+  } else if(c.wStep===12){
+    const totalInc=(c.wExp||[]).reduce((a,s)=>a+s.amount,0)||(c.income||0);
+    const totalExp=(c.budget||[]).filter(b=>b.wizardStep).reduce((a,b)=>a+(b.amount||0),0);
+    const totalDebtMin=(c.wDebts||[]).reduce((a,d)=>a+(d.monthly||0),0);
+    const totalOut=totalExp+totalDebtMin;
+    const diff=totalInc-totalOut;
+    const surplus=diff>=0;
+
+    const stepLabelMap={2:'Giving',3:'Savings',4:'Housing',5:'Transportation',6:'Food',7:'Personal',8:'Lifestyle',9:'Health',10:'Insurance'};
+    let catRows='';
+    [2,3,4,5,6,7,8,9,10].forEach(sn=>{
+      const items=(c.budget||[]).filter(b=>b.wizardStep===sn&&(b.amount||0)>0);
+      if(items.length>0){
+        const t=items.reduce((a,b)=>a+b.amount,0);
+        catRows+='<div style="display:flex;justify-content:space-between;align-items:center;padding:7px 0;border-bottom:1px solid var(--bd);">'
+          +'<div style="font-size:13px;color:var(--mt);">'+stepLabelMap[sn]+'</div>'
+          +'<div style="font-size:13px;font-weight:600;">$'+t.toLocaleString()+'/mo</div>'
+          +'</div>';
+      }
+    });
+
+    el.innerHTML='<div class="wizard-step" style="max-width:520px;margin:0 auto;">'
+      +'<div style="font-size:22px;font-weight:700;margin-bottom:4px;">Budget Snapshot</div>'
+      +'<div style="font-size:13px;color:var(--mt);margin-bottom:16px;">Here\'s how your monthly budget looks at a glance.</div>'
+      +pb
+      +'<div class="card" style="margin-bottom:14px;">'
+      +'<div style="display:flex;justify-content:space-between;align-items:center;padding:10px 0;border-bottom:2px solid var(--bd);">'
+      +'<div style="font-size:14px;font-weight:700;">Monthly income</div>'
+      +'<div style="font-size:16px;font-weight:700;color:#2D7A3A;">$'+totalInc.toLocaleString()+'/mo</div>'
+      +'</div>'
+      +catRows
+      +(totalDebtMin>0
+        ?'<div style="display:flex;justify-content:space-between;align-items:center;padding:7px 0;border-bottom:1px solid var(--bd);">'
+          +'<div style="font-size:13px;color:var(--mt);">Debt payments</div>'
+          +'<div style="font-size:13px;font-weight:600;">$'+totalDebtMin.toLocaleString()+'/mo</div>'
+          +'</div>':''
+      )
+      +'<div style="display:flex;justify-content:space-between;align-items:center;padding:10px 0;border-top:2px solid var(--bd);margin-top:4px;">'
+      +'<div style="font-size:14px;font-weight:700;">Total monthly expenses</div>'
+      +'<div style="font-size:15px;font-weight:700;color:#A32D2D;">$'+totalOut.toLocaleString()+'/mo</div>'
+      +'</div>'
+      +'<div style="display:flex;justify-content:space-between;align-items:center;padding:12px 0 4px;">'
+      +'<div style="font-size:16px;font-weight:700;">'+(surplus?'Monthly surplus':'Monthly deficit')+'</div>'
+      +'<div style="font-size:22px;font-weight:700;color:'+(surplus?'#2D7A3A':'#A32D2D')+';">'
+      +(surplus?'+':'-')+'$'+Math.abs(diff).toLocaleString()+'</div>'
+      +'</div>'
+      +'</div>'
+      +(surplus
+        ?'<div style="background:var(--gll);border-radius:12px;padding:14px 18px;margin-bottom:16px;border-left:4px solid var(--g);">'
+          +'<div style="font-size:13px;color:var(--gd);line-height:1.6;">Your extra dollars can go toward your emergency fund, paying off debt, or your long-term goals — you\'ll assign those when you reach your dashboard.</div>'
+          +'</div>'
+        :'<div style="background:var(--yl);border-radius:12px;padding:14px 18px;margin-bottom:16px;border-left:4px solid var(--y);">'
+          +'<div style="font-size:13px;color:var(--yd);line-height:1.6;">Your spending is a bit over your income right now. Your dashboard will help you find places to adjust.</div>'
+          +'</div>'
+      )
+      +'<div style="display:flex;gap:8px;">'
+      +'<button class="btns" onclick="wGoStep(11)" style="padding:10px 20px;">&#x2190; Back</button>'
+      +'<button class="btnp" style="flex:1;padding:14px;font-size:15px;" onclick="wFinish()">Continue to Dashboard &#x2192;</button>'
+      +'</div>'
+      +'</div>';
   }
 }
 
-function wNext1(){
+// ── Income step helpers ──────────────────────────────────────────────────────
+function wAddIncome(){
   const c=portalClient||activeClient;
-  const val=parseInt(document.getElementById('w-income').value);
-  if(!val||val<1){toast('Please enter your monthly income');return;}
-  c.income=val;c.wStep=2;saveClient(c);renderPortal(c);
-}
-function wAddExp(){
-  const c=portalClient||activeClient;
-  const amt=parseFloat(document.getElementById('w-eamt')?.value)||0;
-  const name=(document.getElementById('w-ename')?.value||'').trim();
-  const cat=document.getElementById('w-ecat')?.value||'Other';
-  if(!amt||amt<=0){toast('Please enter an amount');return;}
-  if(!name){toast('Please name this expense');return;}
+  const name=(document.getElementById('w-iname')?.value||'').trim();
+  const amount=Math.round(parseFloat(document.getElementById('w-iamt')?.value)||0);
+  if(!name){toast('Please enter an income source name');return;}
+  if(!amount||amount<=0){toast('Please enter a monthly amount greater than zero');return;}
   if(!c.wExp) c.wExp=[];
-  c.wExp.push({name,amt:Math.round(amt),cat});
+  // Prevent duplicates
+  const exists=c.wExp.find(s=>s.name.toLowerCase()===name.toLowerCase());
+  if(exists){toast(name+' is already in your list');return;}
+  c.wExp.push({name,amount});
+  const ni=document.getElementById('w-iname'),na=document.getElementById('w-iamt');
+  if(ni)ni.value=''; if(na)na.value='';
   saveClient(c);renderPortal(c);
 }
-function wRemoveExp(i){
+function wQuickIncome(name){
   const c=portalClient||activeClient;
-  showConfirmModal('Remove expense?','Remove this expense?','Yes, remove',()=>{c.wExp.splice(i,1);saveClient(c);renderPortal(c);});
+  if((c.wExp||[]).find(s=>s.name===name)){toast(name+' already added');return;}
+  const ni=document.getElementById('w-iname');
+  if(ni){ni.value=name;}
+  const na=document.getElementById('w-iamt');
+  if(na) na.focus();
 }
-function wNext2(){
+function wRemoveIncome(i){
   const c=portalClient||activeClient;
-  if(!c.wExp||c.wExp.length===0){toast('Add at least one expense first');return;}
-  c.wStep=3;saveClient(c);renderPortal(c);
+  c.wExp.splice(i,1);
+  saveClient(c);renderPortal(c);
 }
+function wIncomeNext(){
+  const c=portalClient||activeClient;
+  const total=(c.wExp||[]).reduce((a,s)=>a+s.amount,0);
+  if(!total||total<1){toast('Please add at least one income source');return;}
+  c.income=total;
+  c.wStep=2;
+  saveClient(c);renderPortal(c);
+}
+
+// ── Expense step helpers ─────────────────────────────────────────────────────
+function _wSaveExpInputs(stepNum){
+  const c=portalClient||activeClient;
+  // Remove existing non-custom items for this step, then re-add from inputs
+  c.budget=(c.budget||[]).filter(b=>!(b.wizardStep===stepNum&&!b.isCustom));
+  document.querySelectorAll('.wexp-inp').forEach(inp=>{
+    const amt=Math.round(parseFloat(inp.value)||0);
+    if(amt>0){
+      c.budget.push({
+        name:inp.dataset.name,amount:amt,budget:amt,spent:0,
+        category:inp.dataset.cat,wizardStep:stepNum
+      });
+    }
+  });
+  return c;
+}
+function wExpNext(stepNum){
+  const c=_wSaveExpInputs(stepNum);
+  c.wStep=stepNum+1;
+  saveClient(c);renderPortal(c);
+}
+function wExpBack(stepNum){
+  const c=_wSaveExpInputs(stepNum);
+  c.wStep=stepNum-1;
+  saveClient(c);renderPortal(c);
+}
+function wAddCustomItem(stepNum,dCat){
+  const c=portalClient||activeClient;
+  const name=(document.getElementById('w-cname')?.value||'').trim();
+  const amt=Math.round(parseFloat(document.getElementById('w-camt')?.value)||0);
+  if(!name){toast('Please enter a name for this item');return;}
+  if(!amt||amt<=0){toast('Please enter an amount greater than zero');return;}
+  if(!c.budget) c.budget=[];
+  c.budget.push({name,amount:amt,budget:amt,spent:0,category:dCat,wizardStep:stepNum,isCustom:true});
+  const cn=document.getElementById('w-cname'),ca=document.getElementById('w-camt');
+  if(cn)cn.value=''; if(ca)ca.value='';
+  saveClient(c);renderPortal(c);
+}
+function wRemoveCustomItem(stepNum,name){
+  const c=portalClient||activeClient;
+  c.budget=(c.budget||[]).filter(b=>!(b.wizardStep===stepNum&&b.name===name&&b.isCustom));
+  saveClient(c);renderPortal(c);
+}
+
+// ── Debt step helpers ────────────────────────────────────────────────────────
 function wAddDebt(){
   const c=portalClient||activeClient;
-  const name=(document.getElementById('w-dname')?.value||'').trim();
-  const balance=parseInt(document.getElementById('w-dbalance')?.value)||0;
-  const monthly=parseInt(document.getElementById('w-dmonthly')?.value)||0;
+  const customName=(document.getElementById('w-dname')?.value||'').trim();
+  const typeName=document.getElementById('w-dtype')?.value||'Other';
+  const name=customName||typeName;
+  const balance=Math.round(parseFloat(document.getElementById('w-dbalance')?.value)||0);
+  const monthly=Math.round(parseFloat(document.getElementById('w-dmonthly')?.value)||0);
   const rate=parseFloat(document.getElementById('w-drate')?.value)||0;
-  const type=document.getElementById('w-dtype')?.value||'Other';
-  if(!name){toast('Please enter a debt name');return;}
   if(!balance&&!monthly){toast('Please enter a balance or minimum payment');return;}
   if(!c.wDebts) c.wDebts=[];
-  c.wDebts.push({name,type,balance,monthly,rate,originalBalance:balance});
-  // Clear fields
+  c.wDebts.push({name,type:typeName,balance,monthly,rate,originalBalance:balance});
   ['w-dname','w-dbalance','w-dmonthly','w-drate'].forEach(id=>{const el=document.getElementById(id);if(el)el.value='';});
   saveClient(c);renderPortal(c);
 }
 function wRemoveDebt(i){
   const c=portalClient||activeClient;
-  showConfirmModal('Remove debt?','Remove this debt?','Yes, remove',()=>{c.wDebts.splice(i,1);saveClient(c);renderPortal(c);});
+  showConfirmModal('Remove debt?','Remove this debt from your list?','Yes, remove',()=>{c.wDebts.splice(i,1);saveClient(c);renderPortal(c);});
 }
-function wAddGoal(){
+
+// ── Navigation helper ────────────────────────────────────────────────────────
+function wGoStep(n){
   const c=portalClient||activeClient;
-  const preset=GOAL_PRESETS.find(p=>p.value===document.getElementById('w-gpreset')?.value)||GOAL_PRESETS[0];
-  const name=(document.getElementById('w-gname')?.value||'').trim();
-  const target=parseInt(document.getElementById('w-gtarget')?.value)||0;
-  const saved=parseInt(document.getElementById('w-gsaved')?.value)||0;
-  const monthly=parseInt(document.getElementById('w-gmonthly')?.value)||0;
-  if(!name){toast('Please name your goal');return;}
-  if(!target){toast('Please enter a target amount');return;}
-  if(!c.wGoals) c.wGoals=[];
-  c.wGoals.push({name,target,current:saved,monthly,emoji:preset.emoji||'🎯',isEmergency:preset.isEmergency||false});
+  c.wStep=n;
   saveClient(c);renderPortal(c);
 }
-function wRemoveGoal(i){
-  const c=portalClient||activeClient;
-  showConfirmModal('Remove goal?','Remove this goal?','Yes, remove',()=>{c.wGoals.splice(i,1);saveClient(c);renderPortal(c);});
-}
-function wBack(){
-  const c=portalClient||activeClient;
-  c.wStep=Math.max(1,c.wStep-1);saveClient(c);renderPortal(c);
-}
+
+// ── Finish wizard → commit all data → go to dashboard ───────────────────────
 function wFinish(){
   const c=portalClient||activeClient;
-  c.budget=(c.wExp||[]).map(e=>({name:e.name,amount:e.amt,budget:e.amt,spent:e.amt,category:e.cat}));
+  // Commit income
+  c.income=(c.wExp||[]).reduce((a,s)=>a+s.amount,0)||(c.income||0);
+  // Commit budget — strip wizard markers, keep only items with amount > 0
+  c.budget=(c.budget||[])
+    .filter(b=>b.amount>0)
+    .map(({wizardStep:_ws,isCustom:_ic,...rest})=>rest);
+  // Make sure spent/budget match amount for new records
+  c.budget=c.budget.map(b=>({...b,budget:b.budget||b.amount,spent:b.spent||0}));
   c.expenses=c.budget.reduce((a,b)=>a+b.amount,0);
-  // Save debts from wizard
-  if(c.wDebts&&c.wDebts.length>0){
-    c.debts=c.wDebts.map(d=>({...d}));
-  } else {
-    c.debts=c.debts||[];
-  }
+  // Commit debts
+  c.debts=(c.wDebts||[]).map(d=>({...d}));
   const debtMin=c.debts.reduce((a,d)=>a+(d.monthly||0),0);
   c.debt=c.debts.reduce((a,d)=>a+(d.balance||0),0);
   c.margin=c.income-c.expenses-debtMin;
-  c.goals=(c.wGoals&&c.wGoals.length>0)?c.wGoals:[{name:'General savings',target:10000,current:0,monthly:Math.max(0,Math.round(c.margin*0.5)),emoji:'💰'}];
+  // Default goal if none set
+  if(!c.goals||c.goals.length===0){
+    c.goals=[{name:'General savings',target:10000,current:0,monthly:Math.max(0,Math.round(c.margin*0.5)),emoji:'💰'}];
+  }
   c.netWorth=c.goals.reduce((a,g)=>a+(g.current||0),0)-c.debt;
-  c.budgetSetup=true;c.wStep=1;c.wExp=[];c.wGoals=[];c.wDebts=[];
+  c.budgetSetup=true;
+  // Clear wizard working data
+  c.wStep=1;c.wExp=[];c.wGoals=[];c.wDebts=[];
   const sr=c.income>0?c.margin/c.income:0;
   c.score=Math.min(95,Math.max(30,Math.round(40+sr*150)));
   portalTab='dashboard';
