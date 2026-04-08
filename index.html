@@ -3416,11 +3416,13 @@ const _WSD = [
    dCat:'Other'},
   {num:11,key:'debts',emoji:'💳',title:'Debts',
    sub:'Debt is super common — you\'re not alone. Let\'s just get it all in one place so we can make a real plan.'},
-  {num:12,key:'summary',emoji:'🎊',title:'You\'re almost there!',
+  {num:12,key:'goals',emoji:'🎯',title:'Your Goals',
+   sub:'What are you working toward? Add a goal or two — you can always add more from your dashboard.'},
+  {num:13,key:'summary',emoji:'🎊',title:'You\'re almost there!',
    sub:'Here\'s your full budget at a glance. Take a look, then head into your dashboard.'},
 ];
-const _WLABELS=['Income','Giving','Savings','Housing','Transportation','Food','Personal','Lifestyle','Health','Insurance','Debts','Summary'];
-const _WTOTAL=12;
+const _WLABELS=['Income','Giving','Savings','Housing','Transportation','Food','Personal','Lifestyle','Health','Insurance','Debts','Goals','Summary'];
+const _WTOTAL=13;
 
 function renderWizard(c,el){
   if(!c.wStep||c.wStep<1) c.wStep=1;
@@ -3591,9 +3593,59 @@ function renderWizard(c,el){
       +'<button class="btnp" style="flex:1;padding:13px;font-size:14px;" onclick="wGoStep(12)">Almost done &#x2192;</button>'
       +'</div></div>';
 
-  // ── Step 12: Budget Snapshot ─────────────────────────────────────
+  // ── Step 12: Goals ───────────────────────────────────────────────
   } else if(c.wStep===12){
     const def=_WSD[12];
+    const margin12=Math.max(0,(c.income||0)-(c.budget||[]).filter(b=>b.wizardStep).reduce((a,b)=>a+(b.amount||0),0)-(c.wDebts||[]).reduce((a,d)=>a+(d.monthly||0),0));
+    const goalTotal12=(c.wGoals||[]).reduce((a,g)=>a+(g.monthly||0),0);
+    const stillFree12=margin12-goalTotal12;
+
+    let goalRows='';
+    (c.wGoals||[]).forEach((g,i)=>{
+      goalRows+='<div style="display:flex;justify-content:space-between;align-items:center;padding:10px 0;border-bottom:1px solid var(--bd);">'
+        +'<div><div style="font-size:14px;font-weight:600;">'+(g.emoji||'🎯')+' '+g.name+'</div>'
+        +'<div style="font-size:11px;color:var(--mt);">Target $'+(g.target||0).toLocaleString()+(g.monthly?' · $'+g.monthly.toLocaleString()+'/mo':'')+'</div></div>'
+        +'<button class="btnd" style="font-size:10px;padding:2px 8px;" onclick="wRemoveWGoal('+i+')">&#x2715;</button>'
+        +'</div>';
+    });
+
+    const presets=[{n:'Emergency fund',e:'🛡️'},{n:'Vacation',e:'✈️'},{n:'Retirement',e:'🏡'},{n:'Home down payment',e:'🏠'},{n:'New car',e:'🚗'},{n:'Wedding',e:'💍'},{n:'Education',e:'🎓'},{n:'Baby fund',e:'👶'}];
+    const presetChips=presets.map(p=>'<button class="btns" style="font-size:12px;padding:4px 12px;" onclick="wGoalPreset(\''+p.n+'\',\''+p.e+'\')">'+p.e+' '+p.n+'</button>').join('');
+
+    el.innerHTML='<div class="wizard-step" style="max-width:520px;margin:0 auto;">'
+      +_hdr(def)
+      +pb
+      +(margin12>0?'<div style="background:var(--gll);border-radius:12px;padding:12px 18px;margin-bottom:14px;border-left:4px solid var(--g);display:flex;justify-content:space-between;align-items:center;">'
+        +'<div style="font-size:12px;color:var(--gd);">Available to save each month</div>'
+        +'<div style="font-size:18px;font-weight:700;color:var(--g);">$'+stillFree12.toLocaleString()+'<span style="font-size:12px;font-weight:400;color:var(--mt);">/mo</span></div>'
+        +'</div>':'')
+      +((c.wGoals||[]).length>0
+        ?'<div class="card" style="margin-bottom:14px;"><div style="font-size:13px;font-weight:700;margin-bottom:2px;">Goals added ('+c.wGoals.length+')</div>'+goalRows+'</div>'
+        :'')
+      +'<div class="card" style="margin-bottom:14px;">'
+      +'<div style="font-size:13px;font-weight:600;color:var(--mt);margin-bottom:10px;">Quick add a goal — or type your own:</div>'
+      +'<div style="display:flex;flex-wrap:wrap;gap:6px;margin-bottom:14px;">'+presetChips+'</div>'
+      +'<div style="display:flex;gap:8px;align-items:flex-end;flex-wrap:wrap;margin-bottom:10px;">'
+      +'<div class="fg" style="flex:1;min-width:130px;"><label class="flb">Goal name</label>'
+      +'<input type="text" id="w-gname" placeholder="e.g. Emergency fund"/></div>'
+      +'<div style="display:flex;flex-direction:column;gap:2px;"><label class="flb">Target ($)</label>'
+      +'<input type="number" id="w-gtarget" placeholder="10000" style="width:120px;padding:8px 10px;"/></div>'
+      +'</div>'
+      +'<div style="display:flex;gap:8px;align-items:flex-end;flex-wrap:wrap;">'
+      +'<div class="fg" style="flex:1;min-width:130px;"><label class="flb">Already saved ($)</label>'
+      +'<input type="number" id="w-gsaved" placeholder="0"/></div>'
+      +'<div style="display:flex;flex-direction:column;gap:2px;"><label class="flb">Monthly ($, optional)</label>'
+      +'<input type="number" id="w-gmonthly" placeholder="'+(stillFree12>0?Math.round(stillFree12*0.5):0)+'" style="width:120px;padding:8px 10px;"/></div>'
+      +'<button class="btny" style="padding:9px 16px;white-space:nowrap;" onclick="wAddWGoal()">+ Add</button>'
+      +'</div></div>'
+      +'<div style="display:flex;gap:8px;">'
+      +'<button class="btns" onclick="wGoStep(11)" style="padding:10px 20px;">&#x2190; Back</button>'
+      +'<button class="btnp" style="flex:1;padding:13px;font-size:14px;" onclick="wGoStep(13)">Continue &#x2192;</button>'
+      +'</div></div>';
+
+  // ── Step 13: Budget Snapshot ─────────────────────────────────────
+  } else if(c.wStep===13){
+    const def=_WSD[13];
     const totalInc=(c.wExp||[]).reduce((a,s)=>a+s.amount,0)||(c.income||0);
     const totalExp=(c.budget||[]).filter(b=>b.wizardStep).reduce((a,b)=>a+(b.amount||0),0);
     const totalDebtMin=(c.wDebts||[]).reduce((a,d)=>a+(d.monthly||0),0);
@@ -3649,7 +3701,7 @@ function renderWizard(c,el){
           +'</div>'
       )
       +'<div style="display:flex;gap:8px;">'
-      +'<button class="btns" onclick="wGoStep(11)" style="padding:10px 20px;">&#x2190; Back</button>'
+      +'<button class="btns" onclick="wGoStep(12)" style="padding:10px 20px;">&#x2190; Back</button>'
       +'<button class="btnp" style="flex:1;padding:14px;font-size:15px;font-weight:700;" onclick="wFinish()">Take me to my dashboard 🚀</button>'
       +'</div></div>';
   }
@@ -3780,6 +3832,32 @@ function wRemoveDebt(i){
   showConfirmModal('Remove debt?','Remove this debt from your list?','Yes, remove',()=>{c.wDebts.splice(i,1);saveClient(c);renderPortal(c);});
 }
 
+// ── Goals step helpers ───────────────────────────────────────────────────────
+function wAddWGoal(){
+  const c=portalClient||activeClient;
+  const name=(document.getElementById('w-gname')?.value||'').trim();
+  const target=Math.round(parseFloat(document.getElementById('w-gtarget')?.value)||0);
+  const saved=Math.round(parseFloat(document.getElementById('w-gsaved')?.value)||0);
+  const monthly=Math.round(parseFloat(document.getElementById('w-gmonthly')?.value)||0);
+  if(!name){toast('Please enter a goal name');return;}
+  if(!target){toast('Please enter a target amount');return;}
+  if(!c.wGoals) c.wGoals=[];
+  c.wGoals.push({name,target,current:saved,monthly,emoji:'🎯'});
+  ['w-gname','w-gtarget','w-gsaved','w-gmonthly'].forEach(id=>{const el=document.getElementById(id);if(el)el.value='';});
+  saveClient(c);renderPortal(c);
+}
+function wGoalPreset(name,emoji){
+  const ni=document.getElementById('w-gname');
+  if(ni) ni.value=name;
+  const ti=document.getElementById('w-gtarget');
+  if(ti) ti.focus();
+}
+function wRemoveWGoal(i){
+  const c=portalClient||activeClient;
+  c.wGoals.splice(i,1);
+  saveClient(c);renderPortal(c);
+}
+
 // ── Navigation helper ────────────────────────────────────────────────────────
 function wGoStep(n){
   const c=portalClient||activeClient;
@@ -3804,12 +3882,16 @@ function wFinish(){
   const debtMin=c.debts.reduce((a,d)=>a+(d.monthly||0),0);
   c.debt=c.debts.reduce((a,d)=>a+(d.balance||0),0);
   c.margin=c.income-c.expenses-debtMin;
-  if(!c.goals||c.goals.length===0){
+  // Commit goals from wizard step 12 (or default if none added)
+  if(c.wGoals&&c.wGoals.length>0){
+    c.goals=c.wGoals.map(g=>({...g}));
+  } else if(!c.goals||c.goals.length===0){
     c.goals=[{name:'General savings',target:10000,current:0,monthly:Math.max(0,Math.round(c.margin*0.5)),emoji:'💰'}];
   }
   c.netWorth=c.goals.reduce((a,g)=>a+(g.current||0),0)-c.debt;
   c.budgetSetup=true;
-  c.wStep=1;c.wExp=[];c.wGoals=[];c.wDebts=[];
+  // Keep wExp (income sources) so budget tab can show/edit them
+  c.wStep=1;c.wGoals=[];c.wDebts=[];
   const sr=c.income>0?c.margin/c.income:0;
   c.score=Math.min(95,Math.max(30,Math.round(40+sr*150)));
   portalTab='dashboard';
@@ -3901,7 +3983,7 @@ function updatePortalHeader(){
 function setPTab(t){
   portalTab = t;
   document.querySelectorAll('#portal-nav .nb').forEach(b=>{
-    b.classList.toggle('active', b.textContent.trim()===t);
+    b.classList.toggle('active', b.textContent.trim().toLowerCase()===t.toLowerCase());
   });
   renderPTab();
 }
@@ -4764,6 +4846,16 @@ function renderPInvestments(c,el){
 
   } else {
     // ── EDIT: sliders — identical layout to advisor ───────────────────────
+    const _invTotalExp=(c.budget||[]).reduce((a,b)=>a+(b.amount||0),0);
+    const _invDebtMin=(c.debts||[]).reduce((a,d)=>a+(d.monthly||0),0);
+    const _invGoalTotal=(c.goals||[]).reduce((a,g)=>a+(g.monthly||0),0);
+    const _invFreeMargin=(c.income||0)-_invTotalExp-_invDebtMin-_invGoalTotal-(c.snowballExtra||0);
+    if(_invFreeMargin>0){
+      html+='<div style="background:var(--gll);border-radius:12px;padding:12px 18px;margin-bottom:14px;border-left:4px solid var(--g);">'
+        +'<div style="font-size:13px;font-weight:700;color:var(--gd);margin-bottom:2px;">$'+_invFreeMargin.toLocaleString()+'/mo is unallocated from your budget 🌟</div>'
+        +'<div style="font-size:12px;color:var(--gd);">Put it to work — add investment budget items in the Budget tab, then allocate them to accounts below.</div>'
+        +'</div>';
+    }
     html+='<div class="card card-accent" style="margin-bottom:10px;">'
       +'<div class="ct">Investment budget</div>'
       +'<div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(140px,1fr));gap:1px;background:var(--bd);border-radius:8px;overflow:hidden;margin-bottom:8px;">'
@@ -5515,32 +5607,80 @@ function renderPExpenses(c,el){
   } else {
     // ── EDIT MODE ───────────────────────────────────────────────────────
 
-    // Income
-    html+='<div class="card card-accent" style="margin-bottom:10px;"><div class="ct">Monthly income</div>'
-      +'<div style="display:flex;gap:8px;align-items:center;"><span style="font-size:18px;font-weight:700;color:var(--mt);">$</span>'
-      +'<input type="number" id="p-income" value="'+c.income+'" style="font-size:18px;font-weight:700;padding:10px;flex:1;"/>'
-      +'<button class="btnp" style="padding:10px 18px;" onclick="pSaveIncome()">Save</button></div></div>';
+    // ── Income sources ──────────────────────────────────────────────
+    const incomeSrcs=c.wExp||[];
+    html+='<div class="card card-accent" style="margin-bottom:10px;"><div class="ct">💰 Income</div>';
+    if(incomeSrcs.length>0){
+      incomeSrcs.forEach((s,i)=>{
+        html+='<div style="display:flex;align-items:center;gap:8px;padding:9px 0;border-bottom:1px solid var(--bd);">'
+          +'<div style="flex:1;font-size:14px;font-weight:600;">'+s.name+'</div>'
+          +'<span style="color:var(--mt);">$</span>'
+          +'<input type="number" id="pincs-'+i+'" value="'+s.amount+'" style="width:110px;font-size:14px;font-weight:700;padding:7px;border:1.5px solid var(--bd);border-radius:8px;text-align:right;" />'
+          +'<button class="btnp" style="padding:6px 12px;font-size:12px;" onclick="pUpdateIncomeSrc('+i+')">Save</button>'
+          +'<button class="btnd" style="font-size:10px;padding:2px 8px;" onclick="pRemoveIncomeSrc('+i+')">&#x2715;</button>'
+          +'</div>';
+      });
+      html+='<div style="display:flex;justify-content:space-between;font-size:12px;font-weight:700;padding:8px 0;border-top:1px solid var(--bd);margin-top:4px;">'
+        +'<span style="color:var(--mt);">Total income</span><span style="color:#2D7A3A;">$'+c.income.toLocaleString()+'/mo</span></div>';
+    } else {
+      html+='<div style="display:flex;gap:8px;align-items:center;margin-bottom:6px;">'
+        +'<span style="font-size:18px;font-weight:700;color:var(--mt);">$</span>'
+        +'<input type="number" id="p-income" value="'+c.income+'" style="font-size:18px;font-weight:700;padding:10px;flex:1;"/>'
+        +'<button class="btnp" style="padding:10px 18px;" onclick="pSaveIncome()">Save</button></div>';
+    }
+    // Add new income source
+    html+='<div style="display:flex;gap:8px;align-items:flex-end;flex-wrap:wrap;margin-top:10px;">'
+      +'<div class="fg" style="flex:1;min-width:120px;"><label class="flb">Add income source</label>'
+      +'<input type="text" id="p-new-isrc-name" placeholder="e.g. Side hustle, Rental income"/></div>'
+      +'<div style="display:flex;flex-direction:column;gap:2px;"><label class="flb">Monthly ($)</label>'
+      +'<input type="number" id="p-new-isrc-amt" placeholder="0" style="width:110px;padding:8px;"/></div>'
+      +'<button class="btny" style="padding:9px 14px;white-space:nowrap;" onclick="pAddIncomeSrc()">+ Add</button>'
+      +'</div></div>';
 
-    // Expenses
-    html+='<div class="card card-accent" style="margin-bottom:10px;"><div class="ct">Expenses</div>';
+    // ── Expenses grouped by department ──────────────────────────────
+    const BDEPTS=[
+      {name:'🤲 Giving',     cats:['Giving']},
+      {name:'🌱 Savings',    cats:['Savings / Investments','Savings']},
+      {name:'🏠 Housing',    cats:['Housing / Rent','Mortgage','Utilities','Electricity','Internet']},
+      {name:'🚗 Transportation', cats:['Transportation','Gas','Parking','Car Insurance','Car Payment','Car loan']},
+      {name:'🍽️ Food',       cats:['Groceries','Dining Out','Coffee']},
+      {name:'✨ Personal',   cats:['Clothing','Phone','Personal Care','Subscriptions']},
+      {name:'🐾 Lifestyle',  cats:['Pet expenses','Childcare / Kids','Entertainment']},
+      {name:'💚 Health',     cats:['Gym / Fitness','Healthcare / Medical','Healthcare']},
+      {name:'🛡️ Insurance',  cats:['Health Insurance','Car Insurance']},
+    ];
+    const grouped={};
     c.budget.forEach((b,i)=>{
-      html+='<div style="padding:11px 0;border-bottom:1px solid var(--bd);">'
-        +'<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px;">'
-        +'<div><div style="font-size:13px;font-weight:700;">'+b.name+'</div>'
-        +'<div style="font-size:11px;color:var(--mt);">'+(b.category||'Expense')+'</div></div>'
-        +'<button class="btnd" style="font-size:11px;padding:3px 10px;" onclick="pDelExp('+i+')">remove</button></div>'
-        +'<div style="display:flex;gap:8px;align-items:center;">'
-        +'<span style="font-size:16px;font-weight:700;color:var(--mt);">$</span>'
-        +'<input type="number" id="pexp-'+i+'" value="'+(b.amount||0)+'" style="font-size:16px;font-weight:700;padding:8px;flex:1;"/>'
-        +'<span style="font-size:13px;color:var(--mt);">/mo</span>'
-        +'<button class="btnp" style="padding:8px 14px;font-size:12px;" onclick="pUpdateExp('+i+')">Update</button>'
-        +'</div></div>';
+      const dept=BDEPTS.find(d=>d.cats.some(cat=>(b.category||'').toLowerCase().includes(cat.toLowerCase())||cat.toLowerCase().includes((b.category||'').toLowerCase())));
+      const key=dept?dept.name:'Other';
+      if(!grouped[key])grouped[key]=[];
+      grouped[key].push({...b,_idx:i});
     });
-    html+='</div>';
+    const deptOrder=BDEPTS.map(d=>d.name).concat(['Other']);
+    deptOrder.forEach(dname=>{
+      const items=grouped[dname];
+      if(!items||items.length===0) return;
+      html+='<div class="card card-accent" style="margin-bottom:10px;">'
+        +'<div class="ct">'+dname+'</div>';
+      items.forEach(b=>{
+        const i=b._idx;
+        html+='<div style="padding:10px 0;border-bottom:1px solid var(--bd);">'
+          +'<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px;">'
+          +'<div style="font-size:13px;font-weight:700;">'+b.name+'</div>'
+          +'<button class="btnd" style="font-size:11px;padding:3px 10px;" onclick="pDelExp('+i+')">remove</button></div>'
+          +'<div style="display:flex;gap:8px;align-items:center;">'
+          +'<span style="font-size:16px;font-weight:700;color:var(--mt);">$</span>'
+          +'<input type="number" id="pexp-'+i+'" value="'+(b.amount||0)+'" style="font-size:16px;font-weight:700;padding:8px;flex:1;"/>'
+          +'<span style="font-size:13px;color:var(--mt);">/mo</span>'
+          +'<button class="btnp" style="padding:8px 14px;font-size:12px;" onclick="pUpdateExp('+i+')">Update</button>'
+          +'</div></div>';
+      });
+      html+='</div>';
+    });
 
     // Add expense
     const catOptions=EXP_CATS.map(cat=>'<option>'+cat+'</option>').join('');
-    html+='<div class="card card-accent" style="margin-bottom:12px;"><div class="ct">Add an expense</div>'
+    html+='<div class="card card-accent" style="margin-bottom:12px;"><div class="ct">+ Add an expense</div>'
       +'<div style="display:flex;align-items:center;gap:8px;margin-bottom:12px;">'
       +'<span style="font-size:22px;font-weight:700;color:var(--mt);">$</span>'
       +'<input type="number" id="pnew-amt" placeholder="0" style="font-size:22px;font-weight:700;padding:10px;border:2px solid var(--bd);border-radius:10px;flex:1;" oninput="pnewAmtColor(this)"/>'
@@ -5579,6 +5719,36 @@ function pSaveIncome(){
   c.income=val;
   syncClientTotals(c);
   saveClient(c);toast('Income updated!');renderPTab();
+}
+function pAddIncomeSrc(){
+  const c=portalClient||activeClient;
+  const name=(document.getElementById('p-new-isrc-name')?.value||'').trim();
+  const amt=Math.round(parseFloat(document.getElementById('p-new-isrc-amt')?.value)||0);
+  if(!name){toast('Please enter a name for this income source');return;}
+  if(!amt||amt<=0){toast('Please enter a monthly amount');return;}
+  if(!c.wExp) c.wExp=[];
+  c.wExp.push({name,amount:amt});
+  c.income=c.wExp.reduce((a,s)=>a+s.amount,0);
+  syncClientTotals(c);
+  saveClient(c);toast(name+' added!');renderPTab();
+}
+function pUpdateIncomeSrc(i){
+  const c=portalClient||activeClient;
+  const amt=Math.round(parseFloat(document.getElementById('pincs-'+i)?.value)||0);
+  if(!amt||amt<=0){toast('Please enter a valid amount');return;}
+  c.wExp[i].amount=amt;
+  c.income=c.wExp.reduce((a,s)=>a+s.amount,0);
+  syncClientTotals(c);
+  saveClient(c);toast('Income updated!');renderPTab();
+}
+function pRemoveIncomeSrc(i){
+  const c=portalClient||activeClient;
+  showConfirmModal('Remove income source?','Remove "'+c.wExp[i].name+'" from your income?','Yes, remove',()=>{
+    c.wExp.splice(i,1);
+    c.income=c.wExp.length>0?c.wExp.reduce((a,s)=>a+s.amount,0):c.income;
+    syncClientTotals(c);
+    saveClient(c);renderPTab();
+  });
 }
 function pUpdateExp(i){
   const c=portalClient||activeClient;
@@ -5706,6 +5876,12 @@ function renderPGoals(c,el){
       +(snowballExtra>0?'<div style="text-align:center;font-size:10px;color:var(--gd);margin-top:8px;opacity:.8;">$'+snowballExtra.toLocaleString()+'/mo is allocated to the debt snowball</div>':'')
       +'</div>';
 
+    if(unallocated>0){
+      html+='<div style="background:var(--gll);border-radius:12px;padding:12px 18px;margin-bottom:14px;border-left:4px solid var(--g);">'
+        +'<div style="font-size:13px;font-weight:700;color:var(--gd);margin-bottom:2px;">You have $'+unallocated.toLocaleString()+'/mo unallocated 🌟</div>'
+        +'<div style="font-size:12px;color:var(--gd);line-height:1.5;">Put it to work — increase a goal contribution or add a new goal below.</div>'
+        +'</div>';
+    }
     if(c.goals.length>0){
       html+='<div class="card card-accent" style="margin-bottom:10px;"><div class="ct">Set monthly contributions</div>';
       c.goals.forEach((g,i)=>{
