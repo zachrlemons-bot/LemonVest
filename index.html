@@ -3948,8 +3948,8 @@ function renderPortal(c){
       + '<div id="portal-header-invest-unalloc" style="font-size:20px;font-weight:700;color:'+(investUnalloc<0?'var(--r)':investUnalloc===0?'var(--mt)':'#185FA5')+';">$'+investUnalloc.toLocaleString()+'<span style="font-size:11px;font-weight:400;color:var(--mt);">/mo</span></div></div>'
       : '')
     + '</div></div>'
-    + '<div class="nav-row" id="portal-nav">'
-    + tabs.map(t=>'<button class="nb '+(t===portalTab?'active':'')+'" onclick="setPTab(\''+t+'\')">'+t.replace(/\b\w/g,c=>c.toUpperCase())+'</button>').join('')
+    + '<div id="portal-nav" style="display:flex;gap:4px;margin-bottom:14px;padding-bottom:14px;border-bottom:1px solid var(--bd);overflow-x:auto;-webkit-overflow-scrolling:touch;scrollbar-width:none;">'
+    + tabs.map(t=>'<button class="nb '+(t===portalTab?'active':'')+'" style="white-space:nowrap;flex-shrink:0;" onclick="setPTab(\''+t+'\')">'+t.replace(/\b\w/g,c=>c.toUpperCase())+'</button>').join('')
     + '</div><div id="portal-body"></div>';
   renderPTab();
 }
@@ -5449,33 +5449,37 @@ function renderPDash(c,el){
   // SPENDING — horizontal bar breakdown
   // ════════════════════════════════════════
   if(budgetItems.length>0){
+    // Sort by amount descending, assign colors by sorted index so bar & list match
+    const sortedItems=[...budgetItems].sort((a,b)=>(b.amount||0)-(a.amount||0));
     html+=`<div style="background:#fff;border:1px solid #f0f0ee;border-radius:16px;padding:18px;margin-bottom:16px;">
     <div style="display:flex;justify-content:space-between;align-items:baseline;margin-bottom:14px;">
       <div style="font-size:13px;font-weight:700;color:#1a1a1a;">Where it goes</div>
-      <div style="font-size:11px;color:#aaa;">this month</div>
+      <div style="font-size:11px;color:#aaa;">$${totalExp.toLocaleString()} / mo</div>
     </div>
-    <div style="display:flex;height:8px;border-radius:8px;overflow:hidden;margin-bottom:14px;gap:1px;">`;
-    budgetItems.forEach((b,i)=>{
-      const pct=c.income>0?(b.amount||0)/c.income*100:0;
-      if(pct>0) html+=`<div style="flex:${pct};background:${PCOLS[i%10]};min-width:2px;" title="${b.name}: $${(b.amount||0).toLocaleString()}"></div>`;
+    <div style="display:flex;height:10px;border-radius:10px;overflow:hidden;margin-bottom:16px;gap:1px;">`;
+    sortedItems.forEach((b,i)=>{
+      const flex=c.income>0?(b.amount||0)/c.income*100:0;
+      if(flex>0) html+=`<div style="flex:${flex};background:${PCOLS[i%10]};min-width:3px;" title="${b.name}: $${(b.amount||0).toLocaleString()}"></div>`;
     });
-    if(margin>0){const mp=c.income>0?margin/c.income*100:0;html+=`<div style="flex:${mp};background:#e8e8e4;min-width:2px;" title="Free margin"></div>`;}
+    if(margin>0){const mp=c.income>0?margin/c.income*100:0;html+=`<div style="flex:${mp};background:#e8e8e4;border-radius:0 10px 10px 0;min-width:3px;" title="Free margin: $${margin.toLocaleString()}"></div>`;}
     html+='</div>';
-    // Top 4 items
-    const sorted=[...budgetItems].sort((a,b)=>(b.amount||0)-(a.amount||0)).slice(0,5);
-    sorted.forEach((b,i)=>{
+    // All items list
+    sortedItems.forEach((b,i)=>{
       const pct=c.income>0?Math.round((b.amount||0)/c.income*100):0;
-      const barW=totalExp>0?Math.round((b.amount||0)/totalExp*100):0;
-      html+=`<div style="display:flex;align-items:center;gap:10px;margin-bottom:10px;">
-        <div style="width:8px;height:8px;border-radius:50%;background:${PCOLS[i%10]};flex-shrink:0;"></div>
-        <div style="flex:1;font-size:13px;color:#1a1a1a;font-weight:500;">${b.name}</div>
-        <div style="font-size:13px;font-weight:700;color:#1a1a1a;">$${(b.amount||0).toLocaleString()}</div>
-        <div style="font-size:11px;color:#aaa;width:30px;text-align:right;">${pct}%</div>
+      html+=`<div style="display:flex;align-items:center;gap:10px;padding:7px 0;border-bottom:1px solid #f5f5f3;">
+        <div style="width:10px;height:10px;border-radius:3px;background:${PCOLS[i%10]};flex-shrink:0;"></div>
+        <div style="flex:1;font-size:13px;color:#1a1a1a;font-weight:500;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${b.name}</div>
+        <div style="font-size:13px;font-weight:700;color:#1a1a1a;flex-shrink:0;">$${(b.amount||0).toLocaleString()}</div>
+        <div style="font-size:11px;color:#bbb;width:28px;text-align:right;flex-shrink:0;">${pct}%</div>
       </div>`;
     });
-    if(budgetItems.length>5){
-      const rest=budgetItems.slice(5).reduce((a,b)=>a+(b.amount||0),0);
-      html+=`<div style="font-size:11px;color:#aaa;margin-top:4px;">+ ${budgetItems.length-5} more items · $${rest.toLocaleString()}/mo</div>`;
+    if(margin>0){
+      html+=`<div style="display:flex;align-items:center;gap:10px;padding:7px 0;">
+        <div style="width:10px;height:10px;border-radius:3px;background:#e8e8e4;flex-shrink:0;"></div>
+        <div style="flex:1;font-size:13px;color:#aaa;font-weight:500;">Free margin</div>
+        <div style="font-size:13px;font-weight:700;color:#2D7A3A;">$${margin.toLocaleString()}</div>
+        <div style="font-size:11px;color:#bbb;width:28px;text-align:right;">${c.income>0?Math.round(margin/c.income*100):0}%</div>
+      </div>`;
     }
     html+='</div>';
   }
