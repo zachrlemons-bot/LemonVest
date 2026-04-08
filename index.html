@@ -3484,7 +3484,7 @@ function renderWizard(c,el){
         +'<div style="flex:1;font-size:14px;font-weight:500;">'+item.name+'</div>'
         +'<div style="display:flex;align-items:center;gap:4px;">'
         +'<span style="font-size:13px;color:var(--mt);">$</span>'
-        +'<input type="number" class="wexp-inp" data-step="'+c.wStep+'" data-name="'+safeN+'" data-cat="'+item.cat+'" placeholder="0" value="'+(amt||'')+'" style="width:110px;padding:8px 10px;font-size:14px;font-weight:600;border:1.5px solid var(--bd);border-radius:8px;text-align:right;"/>'
+        +'<input type="number" class="wexp-inp" data-step="'+c.wStep+'" data-name="'+safeN+'" data-cat="'+item.cat+'" placeholder="0" value="'+(amt||'')+'" onchange="wAutoSaveStep(this)" style="width:110px;padding:8px 10px;font-size:14px;font-weight:600;border:1.5px solid var(--bd);border-radius:8px;text-align:right;"/>'
         +'</div></div>';
     });
 
@@ -3688,6 +3688,11 @@ function _wSaveExpInputs(stepNum){
     }
   });
   return c;
+}
+function wAutoSaveStep(inputEl){
+  const stepNum=parseInt(inputEl.dataset.step);
+  _wSaveExpInputs(stepNum);
+  saveClient(portalClient||activeClient);
 }
 function wExpNext(stepNum){
   const c=_wSaveExpInputs(stepNum);
