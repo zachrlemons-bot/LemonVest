@@ -60,6 +60,9 @@ body{font-family:'Plus Jakarta Sans',sans-serif;font-size:14px;color:var(--ink);
 .wizard-step{animation:wizardStepIn 0.5s cubic-bezier(0.22,1,0.36,1) both;}
 .wizard-progress-track{height:5px;background:var(--bd);border-radius:99px;margin-bottom:28px;overflow:hidden;}
 .wizard-progress-fill{height:100%;background:var(--g);border-radius:99px;transition:width 0.6s cubic-bezier(0.22,1,0.36,1);}
+@keyframes lemonBounce{0%{transform:rotate(-15deg) scale(0.6);opacity:0;}40%{transform:rotate(12deg) scale(1.2);opacity:1;}70%{transform:rotate(-6deg) scale(0.95);}100%{transform:rotate(0deg) scale(1);opacity:1;}}
+@keyframes moneyPop{0%{transform:translateY(18px) scale(0.5);opacity:0;}60%{transform:translateY(-6px) scale(1.15);opacity:1;}100%{transform:translateY(0) scale(1);opacity:1;}}
+@keyframes lemonPulse{0%,100%{transform:scale(1);}50%{transform:scale(1.12) rotate(8deg);}}
 .nb:hover:not(.active){background:var(--gll);color:var(--gd);border-color:var(--gl);}
 /* Forms */
 .fr{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:10px;}
@@ -3652,6 +3655,21 @@ function renderWizard(c,el){
   }
 }
 
+// ── Step transition animation ────────────────────────────────────────────────
+function _wAnimate(then){
+  const el=document.getElementById('portal-content');
+  const moneyEmojis=['💰','💵','🌟','✨','💛','🍋'];
+  const picks=[0,1,2,3,4].map(i=>moneyEmojis[(i+Math.floor(Math.random()*2))%moneyEmojis.length]);
+  el.innerHTML='<div style="display:flex;flex-direction:column;align-items:center;justify-content:center;min-height:55vh;user-select:none;">'
+    +'<div style="font-size:80px;animation:lemonBounce 0.55s cubic-bezier(0.22,1,0.36,1) both;margin-bottom:14px;line-height:1;">🍋</div>'
+    +'<div style="display:flex;gap:12px;font-size:26px;margin-bottom:20px;">'
+    +picks.map((e,i)=>'<span style="animation:moneyPop 0.4s cubic-bezier(0.22,1,0.36,1) '+( i*0.07).toFixed(2)+'s both;">'+e+'</span>').join('')
+    +'</div>'
+    +'<div style="font-size:14px;font-weight:600;color:var(--g);letter-spacing:0.02em;">Saving your progress...</div>'
+    +'</div>';
+  setTimeout(then, 680);
+}
+
 // ── Income step helpers ──────────────────────────────────────────────────────
 function wAddIncome(){
   const c=portalClient||activeClient;
@@ -3687,7 +3705,8 @@ function wIncomeNext(){
   if(!total||total<1){toast('Please add at least one income source');return;}
   c.income=total;
   c.wStep=2;
-  saveClient(c);renderPortal(c);
+  saveClient(c);
+  _wAnimate(()=>renderPortal(c));
 }
 
 // ── Expense step helpers ─────────────────────────────────────────────────────
@@ -3714,12 +3733,14 @@ function wAutoSaveStep(inputEl){
 function wExpNext(stepNum){
   const c=_wSaveExpInputs(stepNum);
   c.wStep=stepNum+1;
-  saveClient(c);renderPortal(c);
+  saveClient(c);
+  _wAnimate(()=>renderPortal(c));
 }
 function wExpBack(stepNum){
   const c=_wSaveExpInputs(stepNum);
   c.wStep=stepNum-1;
-  saveClient(c);renderPortal(c);
+  saveClient(c);
+  _wAnimate(()=>renderPortal(c));
 }
 function wAddCustomItem(stepNum,dCat){
   const c=portalClient||activeClient;
@@ -3763,7 +3784,8 @@ function wRemoveDebt(i){
 function wGoStep(n){
   const c=portalClient||activeClient;
   c.wStep=n;
-  saveClient(c);renderPortal(c);
+  saveClient(c);
+  _wAnimate(()=>renderPortal(c));
 }
 
 // ── Finish wizard → commit all data → go to dashboard ───────────────────────
