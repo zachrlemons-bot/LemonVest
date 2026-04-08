@@ -3362,77 +3362,96 @@ function startMsgPolling(){
 // Budget items for steps 2–10 go into c.budget with a wizardStep marker.
 const _WSD = [
   null, // 0 unused
-  {num:1,key:'income',title:'Income'},
-  {num:2,key:'giving',title:'Giving',
+  {num:1,key:'income',emoji:'💰',title:'Income',
+   sub:'No judgment here — just tell us what actually lands in your account each month after taxes.'},
+  {num:2,key:'giving',emoji:'🤲',title:'Giving',
+   sub:'You give — that already says a lot. Add whatever you contribute each month.',
    items:[{name:'Church/tithe',cat:'Giving'},{name:'Charity',cat:'Giving'},{name:'Donations',cat:'Giving'}],
    dCat:'Giving'},
-  {num:3,key:'savings',title:'Savings',
-   note:'This is for planned saving this month — not money already saved.',
+  {num:3,key:'savings',emoji:'🌱',title:'Savings',
+   sub:'Even a little bit counts. This is what you plan to set aside this month.',
+   note:'💡 This is for planned saving this month — not money you\'ve already saved up.',
    items:[{name:'Emergency fund contribution',cat:'Savings / Investments'},{name:'General savings',cat:'Savings / Investments'}],
    dCat:'Savings / Investments'},
-  {num:4,key:'housing',title:'Housing',
+  {num:4,key:'housing',emoji:'🏠',title:'Housing',
+   sub:'Your home base. Add whatever you pay each month to keep the roof over your head.',
    items:[
      {name:'Mortgage or Rent',cat:'Housing / Rent'},{name:'Water',cat:'Utilities'},
      {name:'Electricity',cat:'Electricity'},{name:'Gas/heat',cat:'Utilities'},
      {name:'Cable/internet',cat:'Internet'},{name:'Trash',cat:'Utilities'},{name:'HOA',cat:'Housing / Rent'}],
    dCat:'Housing / Rent'},
-  {num:5,key:'transportation',title:'Transportation',
+  {num:5,key:'transportation',title:'Transportation',emoji:'🚗',
+   sub:'Getting from A to B. Include what you spend on average each month.',
    items:[{name:'Gas',cat:'Gas'},{name:'Car maintenance',cat:'Transportation'},
      {name:'Parking',cat:'Parking'},{name:'Tolls',cat:'Transportation'}],
    dCat:'Transportation'},
-  {num:6,key:'food',title:'Food',
+  {num:6,key:'food',emoji:'🍽️',title:'Food',
+   sub:'We all gotta eat! Add groceries, dining out — whatever feels right for your life.',
    items:[{name:'Groceries',cat:'Groceries'},{name:'Restaurants',cat:'Dining Out'},{name:'Coffee shops',cat:'Coffee'}],
    dCat:'Groceries'},
-  {num:7,key:'personal',title:'Personal',
+  {num:7,key:'personal',emoji:'✨',title:'Personal',
+   sub:'The everyday things that keep you feeling like yourself.',
    items:[{name:'Clothing',cat:'Clothing'},{name:'Phone bill',cat:'Phone'},
      {name:'Fun money',cat:'Other'},{name:'Hair and personal care',cat:'Personal Care'},
      {name:'Subscriptions',cat:'Subscriptions'}],
    dCat:'Personal Care'},
-  {num:8,key:'lifestyle',title:'Lifestyle',
+  {num:8,key:'lifestyle',emoji:'🐾',title:'Lifestyle',
+   sub:'Pets, kids, fun, and all the beautiful extras that make life yours.',
    items:[{name:'Pet care',cat:'Pet expenses'},{name:'Child care',cat:'Childcare / Kids'},
      {name:'Entertainment',cat:'Entertainment'},{name:'Miscellaneous',cat:'Other'}],
    dCat:'Other'},
-  {num:9,key:'health',title:'Health',
+  {num:9,key:'health',emoji:'💚',title:'Health',
+   sub:'Taking care of yourself is never a waste. Add what you spend on staying well.',
    items:[{name:'Gym membership',cat:'Gym / Fitness'},{name:'Medicine',cat:'Healthcare / Medical'},
      {name:'Vitamins and supplements',cat:'Healthcare / Medical'},{name:'Doctor visits',cat:'Healthcare / Medical'}],
    dCat:'Healthcare / Medical'},
-  {num:10,key:'insurance',title:'Insurance',
+  {num:10,key:'insurance',emoji:'🛡️',title:'Insurance',
+   sub:'Protection for you and everything you\'ve worked for.',
    items:[{name:'Health insurance',cat:'Health Insurance'},{name:'Auto insurance',cat:'Car Insurance'},
      {name:'Homeowners or renters insurance',cat:'Housing / Rent'},{name:'Life insurance',cat:'Other'},
      {name:'Identity theft protection',cat:'Other'}],
    dCat:'Other'},
-  {num:11,key:'debts',title:'Debts'},
-  {num:12,key:'summary',title:'Budget Snapshot'},
+  {num:11,key:'debts',emoji:'💳',title:'Debts',
+   sub:'Debt is super common — you\'re not alone. Let\'s just get it all in one place so we can make a real plan.'},
+  {num:12,key:'summary',emoji:'🎊',title:'You\'re almost there!',
+   sub:'Here\'s your full budget at a glance. Take a look, then head into your dashboard.'},
 ];
 const _WLABELS=['Income','Giving','Savings','Housing','Transportation','Food','Personal','Lifestyle','Health','Insurance','Debts','Summary'];
 const _WTOTAL=12;
 
 function renderWizard(c,el){
   if(!c.wStep||c.wStep<1) c.wStep=1;
-  if(!c.wExp) c.wExp=[];    // income sources: [{name, amount}]
+  if(!c.wExp) c.wExp=[];
   if(!c.wDebts) c.wDebts=[];
   if(!c.budget) c.budget=[];
 
   const pct=Math.round((c.wStep/_WTOTAL)*100);
   const pb='<div class="wizard-progress-track" style="margin-bottom:6px;"><div class="wizard-progress-fill" style="width:'+pct+'%"></div></div>'
-    +'<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:20px;">'
+    +'<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:22px;">'
     +'<div style="font-size:12px;color:var(--mt);">Step '+c.wStep+' of '+_WTOTAL+'</div>'
     +'<div style="font-size:12px;font-weight:700;color:var(--g);">'+_WLABELS[c.wStep-1]+'</div>'
     +'</div>';
 
-  // Retrieve saved amount for a preset item in a specific wizard step
   function _savedAmt(stepNum,name){
     const b=(c.budget||[]).find(x=>x.wizardStep===stepNum&&x.name===name);
     return b?(b.amount||0):0;
   }
-
-  // Retrieve custom-added items for a wizard step
   function _customItems(stepNum){
     return (c.budget||[]).filter(x=>x.wizardStep===stepNum&&x.isCustom);
   }
 
+  // Shared step header with big emoji + warm title + subtitle
+  function _hdr(def){
+    return '<div style="text-align:center;margin-bottom:20px;">'
+      +'<div style="font-size:48px;margin-bottom:8px;line-height:1;">'+def.emoji+'</div>'
+      +'<div style="font-size:22px;font-weight:700;margin-bottom:6px;">'+def.title+'</div>'
+      +'<div style="font-size:13px;color:var(--mt);max-width:380px;margin:0 auto;line-height:1.5;">'+def.sub+'</div>'
+      +'</div>';
+  }
+
   // ── Step 1: Income ────────────────────────────────────────────────
   if(c.wStep===1){
+    const def=_WSD[1];
     const totalInc=(c.wExp||[]).reduce((a,s)=>a+s.amount,0);
     let srcRows='';
     (c.wExp||[]).forEach((s,i)=>{
@@ -3447,8 +3466,7 @@ function renderWizard(c,el){
       .map(n=>'<button class="btns" style="font-size:12px;padding:4px 12px;" onclick="wQuickIncome(\''+n+'\')">'+n+'</button>').join('');
 
     el.innerHTML='<div class="wizard-step" style="max-width:520px;margin:0 auto;">'
-      +'<div style="font-size:22px;font-weight:700;margin-bottom:4px;">Income</div>'
-      +'<div style="font-size:13px;color:var(--mt);margin-bottom:16px;">Add your monthly take-home income after taxes. You can list multiple sources.</div>'
+      +_hdr(def)
       +pb
       +(srcRows
         ?'<div class="card" style="margin-bottom:14px;">'
@@ -3466,9 +3484,8 @@ function renderWizard(c,el){
       +'<div style="display:flex;flex-direction:column;gap:2px;"><label class="flb">Monthly ($)</label>'
       +'<input type="number" id="w-iamt" placeholder="0" style="width:120px;padding:8px 10px;"/></div>'
       +'<button class="btny" style="padding:9px 16px;white-space:nowrap;" onclick="wAddIncome()">+ Add</button>'
-      +'</div>'
-      +'</div>'
-      +'<button class="btnp" style="width:100%;padding:13px;font-size:14px;" onclick="wIncomeNext()">Continue &#x2192;</button>'
+      +'</div></div>'
+      +'<button class="btnp" style="width:100%;padding:13px;font-size:14px;" onclick="wIncomeNext()">Looks good — continue &#x2192;</button>'
       +'</div>';
 
   // ── Steps 2–10: Expense categories ───────────────────────────────
@@ -3500,33 +3517,31 @@ function renderWizard(c,el){
     });
 
     const noteHtml=def.note
-      ?'<div style="font-size:12px;color:var(--mt);padding:8px 12px;background:var(--sf);border-radius:8px;margin-bottom:12px;">'+def.note+'</div>'
+      ?'<div style="font-size:12px;color:var(--mt);padding:10px 14px;background:var(--sf);border-radius:10px;margin-bottom:12px;line-height:1.5;">'+def.note+'</div>'
       :'';
 
     el.innerHTML='<div class="wizard-step" style="max-width:520px;margin:0 auto;">'
-      +'<div style="font-size:22px;font-weight:700;margin-bottom:4px;">'+def.title+'</div>'
-      +'<div style="font-size:13px;color:var(--mt);margin-bottom:16px;">Enter your monthly amounts. Leave blank for anything that doesn\'t apply.</div>'
+      +_hdr(def)
       +pb
       +noteHtml
       +'<div class="card" style="margin-bottom:14px;">'+rows+'</div>'
       +'<div class="card" style="margin-bottom:14px;">'
-      +'<div style="font-size:13px;font-weight:600;color:var(--mt);margin-bottom:10px;">Add a custom item</div>'
+      +'<div style="font-size:13px;font-weight:600;color:var(--mt);margin-bottom:10px;">Anything else? Add it here</div>'
       +'<div style="display:flex;gap:8px;align-items:flex-end;flex-wrap:wrap;">'
       +'<div class="fg" style="flex:1;min-width:130px;"><label class="flb">Name</label>'
       +'<input type="text" id="w-cname" placeholder="e.g. '+def.items[0].name+'"/></div>'
       +'<div style="display:flex;flex-direction:column;gap:2px;"><label class="flb">Monthly ($)</label>'
       +'<input type="number" id="w-camt" placeholder="0" style="width:120px;padding:8px 10px;"/></div>'
       +'<button class="btny" style="padding:9px 16px;white-space:nowrap;" onclick="wAddCustomItem('+c.wStep+',\''+def.dCat+'\')">+ Add</button>'
-      +'</div>'
-      +'</div>'
+      +'</div></div>'
       +'<div style="display:flex;gap:8px;">'
       +'<button class="btns" onclick="wExpBack('+c.wStep+')" style="padding:10px 20px;">&#x2190; Back</button>'
       +'<button class="btnp" style="flex:1;padding:13px;font-size:14px;" onclick="wExpNext('+c.wStep+')">Continue &#x2192;</button>'
-      +'</div>'
-      +'</div>';
+      +'</div></div>';
 
   // ── Step 11: Debts ───────────────────────────────────────────────
   } else if(c.wStep===11){
+    const def=_WSD[11];
     let debtRows='';
     (c.wDebts||[]).forEach((d,i)=>{
       debtRows+='<div style="display:flex;justify-content:space-between;align-items:center;padding:10px 0;border-bottom:1px solid var(--bd);">'
@@ -3542,37 +3557,35 @@ function renderWizard(c,el){
     const dOpts=dPresets.map(p=>'<option>'+p+'</option>').join('');
 
     el.innerHTML='<div class="wizard-step" style="max-width:520px;margin:0 auto;">'
-      +'<div style="font-size:22px;font-weight:700;margin-bottom:4px;">Debts</div>'
-      +'<div style="font-size:13px;color:var(--mt);margin-bottom:16px;">List any outstanding debts so your dashboard reflects your full financial picture. Everything here is optional.</div>'
+      +_hdr(def)
       +pb
       +((c.wDebts||[]).length>0
-        ?'<div class="card" style="margin-bottom:14px;"><div style="font-size:13px;font-weight:700;margin-bottom:2px;">Debts added ('+c.wDebts.length+')</div>'+debtRows+'</div>'
+        ?'<div class="card" style="margin-bottom:14px;"><div style="font-size:13px;font-weight:700;margin-bottom:4px;">Added so far ('+c.wDebts.length+')</div>'+debtRows+'</div>'
         :'')
       +'<div class="card" style="margin-bottom:14px;">'
-      +'<div style="font-size:13px;font-weight:600;color:var(--mt);margin-bottom:12px;">Add a debt</div>'
+      +'<div style="font-size:13px;font-weight:600;color:var(--mt);margin-bottom:12px;">Add a debt <span style="font-weight:400;">(totally optional)</span></div>'
       +'<div class="fr" style="margin-bottom:10px;">'
       +'<div class="fg"><label class="flb">Debt type</label><select id="w-dtype">'+dOpts+'</select></div>'
       +'<div class="fg"><label class="flb">Custom name (optional)</label>'
-      +'<input type="text" id="w-dname" placeholder="Override the name above"/></div>'
+      +'<input type="text" id="w-dname" placeholder="Or type your own name"/></div>'
       +'</div>'
       +'<div class="fr" style="margin-bottom:10px;">'
       +'<div class="fg"><label class="flb">Current balance ($)</label><input type="number" id="w-dbalance" placeholder="0"/></div>'
       +'<div class="fg"><label class="flb">Interest rate (%)</label><input type="number" id="w-drate" placeholder="e.g. 6.9" step="0.1"/></div>'
       +'</div>'
       +'<div class="fr" style="margin-bottom:12px;">'
-      +'<div class="fg"><label class="flb">Minimum monthly payment ($)</label><input type="number" id="w-dmonthly" placeholder="0"/></div>'
+      +'<div class="fg"><label class="flb">Min. monthly payment ($)</label><input type="number" id="w-dmonthly" placeholder="0"/></div>'
       +'<div class="fg" style="display:flex;align-items:flex-end;">'
       +'<button class="btny" style="width:100%;padding:9px;" onclick="wAddDebt()">+ Add debt</button>'
-      +'</div></div>'
-      +'</div>'
+      +'</div></div></div>'
       +'<div style="display:flex;gap:8px;">'
       +'<button class="btns" onclick="wGoStep(10)" style="padding:10px 20px;">&#x2190; Back</button>'
-      +'<button class="btnp" style="flex:1;padding:13px;font-size:14px;" onclick="wGoStep(12)">Continue &#x2192;</button>'
-      +'</div>'
-      +'</div>';
+      +'<button class="btnp" style="flex:1;padding:13px;font-size:14px;" onclick="wGoStep(12)">Almost done &#x2192;</button>'
+      +'</div></div>';
 
   // ── Step 12: Budget Snapshot ─────────────────────────────────────
   } else if(c.wStep===12){
+    const def=_WSD[12];
     const totalInc=(c.wExp||[]).reduce((a,s)=>a+s.amount,0)||(c.income||0);
     const totalExp=(c.budget||[]).filter(b=>b.wizardStep).reduce((a,b)=>a+(b.amount||0),0);
     const totalDebtMin=(c.wDebts||[]).reduce((a,d)=>a+(d.monthly||0),0);
@@ -3580,6 +3593,7 @@ function renderWizard(c,el){
     const diff=totalInc-totalOut;
     const surplus=diff>=0;
 
+    const stepEmojiMap={2:'🤲',3:'🌱',4:'🏠',5:'🚗',6:'🍽️',7:'✨',8:'🐾',9:'💚',10:'🛡️'};
     const stepLabelMap={2:'Giving',3:'Savings',4:'Housing',5:'Transportation',6:'Food',7:'Personal',8:'Lifestyle',9:'Health',10:'Insurance'};
     let catRows='';
     [2,3,4,5,6,7,8,9,10].forEach(sn=>{
@@ -3587,25 +3601,24 @@ function renderWizard(c,el){
       if(items.length>0){
         const t=items.reduce((a,b)=>a+b.amount,0);
         catRows+='<div style="display:flex;justify-content:space-between;align-items:center;padding:7px 0;border-bottom:1px solid var(--bd);">'
-          +'<div style="font-size:13px;color:var(--mt);">'+stepLabelMap[sn]+'</div>'
+          +'<div style="font-size:13px;color:var(--mt);">'+stepEmojiMap[sn]+' '+stepLabelMap[sn]+'</div>'
           +'<div style="font-size:13px;font-weight:600;">$'+t.toLocaleString()+'/mo</div>'
           +'</div>';
       }
     });
 
     el.innerHTML='<div class="wizard-step" style="max-width:520px;margin:0 auto;">'
-      +'<div style="font-size:22px;font-weight:700;margin-bottom:4px;">Budget Snapshot</div>'
-      +'<div style="font-size:13px;color:var(--mt);margin-bottom:16px;">Here\'s how your monthly budget looks at a glance.</div>'
+      +_hdr(def)
       +pb
       +'<div class="card" style="margin-bottom:14px;">'
       +'<div style="display:flex;justify-content:space-between;align-items:center;padding:10px 0;border-bottom:2px solid var(--bd);">'
-      +'<div style="font-size:14px;font-weight:700;">Monthly income</div>'
+      +'<div style="font-size:14px;font-weight:700;">💰 Monthly income</div>'
       +'<div style="font-size:16px;font-weight:700;color:#2D7A3A;">$'+totalInc.toLocaleString()+'/mo</div>'
       +'</div>'
       +catRows
       +(totalDebtMin>0
         ?'<div style="display:flex;justify-content:space-between;align-items:center;padding:7px 0;border-bottom:1px solid var(--bd);">'
-          +'<div style="font-size:13px;color:var(--mt);">Debt payments</div>'
+          +'<div style="font-size:13px;color:var(--mt);">💳 Debt payments</div>'
           +'<div style="font-size:13px;font-weight:600;">$'+totalDebtMin.toLocaleString()+'/mo</div>'
           +'</div>':''
       )
@@ -3613,25 +3626,24 @@ function renderWizard(c,el){
       +'<div style="font-size:14px;font-weight:700;">Total monthly expenses</div>'
       +'<div style="font-size:15px;font-weight:700;color:#A32D2D;">$'+totalOut.toLocaleString()+'/mo</div>'
       +'</div>'
-      +'<div style="display:flex;justify-content:space-between;align-items:center;padding:12px 0 4px;">'
-      +'<div style="font-size:16px;font-weight:700;">'+(surplus?'Monthly surplus':'Monthly deficit')+'</div>'
-      +'<div style="font-size:22px;font-weight:700;color:'+(surplus?'#2D7A3A':'#A32D2D')+';">'
+      +'<div style="display:flex;justify-content:space-between;align-items:center;padding:14px 0 4px;">'
+      +'<div style="font-size:16px;font-weight:700;">'+(surplus?'Monthly surplus 🎉':'Monthly deficit')+' </div>'
+      +'<div style="font-size:24px;font-weight:700;color:'+(surplus?'#2D7A3A':'#A32D2D')+';">'
       +(surplus?'+':'-')+'$'+Math.abs(diff).toLocaleString()+'</div>'
       +'</div>'
       +'</div>'
       +(surplus
-        ?'<div style="background:var(--gll);border-radius:12px;padding:14px 18px;margin-bottom:16px;border-left:4px solid var(--g);">'
-          +'<div style="font-size:13px;color:var(--gd);line-height:1.6;">Your extra dollars can go toward your emergency fund, paying off debt, or your long-term goals — you\'ll assign those when you reach your dashboard.</div>'
+        ?'<div style="background:var(--gll);border-radius:12px;padding:16px 20px;margin-bottom:16px;border-left:4px solid var(--g);">'
+          +'<div style="font-size:13px;color:var(--gd);line-height:1.7;">Your extra dollars can go toward your emergency fund, paying off debt, or your long-term goals — you\'ll assign those when you reach your dashboard. 🌟</div>'
           +'</div>'
-        :'<div style="background:var(--yl);border-radius:12px;padding:14px 18px;margin-bottom:16px;border-left:4px solid var(--y);">'
-          +'<div style="font-size:13px;color:var(--yd);line-height:1.6;">Your spending is a bit over your income right now. Your dashboard will help you find places to adjust.</div>'
+        :'<div style="background:var(--yl);border-radius:12px;padding:16px 20px;margin-bottom:16px;border-left:4px solid var(--y);">'
+          +'<div style="font-size:13px;color:var(--yd);line-height:1.7;">You\'re spending a little over your income right now — that\'s okay, that\'s exactly why you\'re here. Your dashboard will help you spot where to adjust. You\'ve got this. 💛</div>'
           +'</div>'
       )
       +'<div style="display:flex;gap:8px;">'
       +'<button class="btns" onclick="wGoStep(11)" style="padding:10px 20px;">&#x2190; Back</button>'
-      +'<button class="btnp" style="flex:1;padding:14px;font-size:15px;" onclick="wFinish()">Continue to Dashboard &#x2192;</button>'
-      +'</div>'
-      +'</div>';
+      +'<button class="btnp" style="flex:1;padding:14px;font-size:15px;font-weight:700;" onclick="wFinish()">Take me to my dashboard 🚀</button>'
+      +'</div></div>';
   }
 }
 
@@ -3758,7 +3770,6 @@ function wFinish(){
   c.budget=(c.budget||[])
     .filter(b=>b.amount>0)
     .map(({wizardStep:_ws,isCustom:_ic,...rest})=>rest);
-  // Make sure spent/budget match amount for new records
   c.budget=c.budget.map(b=>({...b,budget:b.budget||b.amount,spent:b.spent||0}));
   c.expenses=c.budget.reduce((a,b)=>a+b.amount,0);
   // Commit debts
@@ -3766,20 +3777,31 @@ function wFinish(){
   const debtMin=c.debts.reduce((a,d)=>a+(d.monthly||0),0);
   c.debt=c.debts.reduce((a,d)=>a+(d.balance||0),0);
   c.margin=c.income-c.expenses-debtMin;
-  // Default goal if none set
   if(!c.goals||c.goals.length===0){
     c.goals=[{name:'General savings',target:10000,current:0,monthly:Math.max(0,Math.round(c.margin*0.5)),emoji:'💰'}];
   }
   c.netWorth=c.goals.reduce((a,g)=>a+(g.current||0),0)-c.debt;
   c.budgetSetup=true;
-  // Clear wizard working data
   c.wStep=1;c.wExp=[];c.wGoals=[];c.wDebts=[];
   const sr=c.income>0?c.margin/c.income:0;
   c.score=Math.min(95,Math.max(30,Math.round(40+sr*150)));
   portalTab='dashboard';
   saveClient(c);
-  toast('Budget set up! Welcome to LemonVest.');
-  renderPortal(c);
+
+  // ── Celebration screen before dashboard loads ─────────────────────
+  const el=document.getElementById('portal-content');
+  const firstName=(c.name||'').split(' ')[0]||'there';
+  el.innerHTML='<div class="wizard-step" style="max-width:480px;margin:80px auto 0;text-align:center;">'
+    +'<div style="font-size:72px;margin-bottom:16px;animation:wizardStepIn 0.6s both;">🎉</div>'
+    +'<div style="font-size:26px;font-weight:700;margin-bottom:10px;">You\'re all set, '+firstName+'!</div>'
+    +'<div style="font-size:15px;color:var(--mt);line-height:1.7;margin-bottom:24px;">'
+    +'Your budget is built. Your numbers are saved.<br>Your dashboard is ready and waiting for you.'
+    +'</div>'
+    +'<div style="display:flex;justify-content:center;gap:18px;font-size:28px;margin-bottom:24px;">🌟💛✨</div>'
+    +'<div style="font-size:13px;color:var(--mt);">Taking you there now...</div>'
+    +'</div>';
+
+  setTimeout(()=>{ renderPortal(c); }, 2000);
 }
 
 
