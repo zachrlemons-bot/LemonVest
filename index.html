@@ -4215,7 +4215,10 @@ function getInvestData(c){
     (b.category||'').includes('Invest')||(b.category||'').includes('Saving')||
     (b.category||'').includes('401')||(b.category||'').includes('IRA')||(b.category||'').includes('HSA')
   ));
-  const totalInvestBudget=investItems.reduce((a,b)=>a+(b.amount||b.budget||0),0);
+  // Use explicitly set monthly budget (from onboarding) if available, otherwise fall back to budget items
+  const totalInvestBudget=(c.investments&&c.investments._mb!=null)
+    ? (c.investments._mb||0)
+    : investItems.reduce((a,b)=>a+(b.amount||b.budget||0),0);
 
   // accountInstances: [{uid, baseId, label, monthly}]
   // Migrate legacy c.investments / c.activeAccounts if needed — only after setup
@@ -4641,7 +4644,7 @@ function isInvestSetupDone(c){return !!(c.investments&&c.investments._setup);}
 function markInvestSetupDone(c){c.investments={...(c.investments||{}),_setup:true};saveClient(c);}
 
 function renderInvestOnboarding(c,el){
-  const pct=_iWizStep===1?33:_iWizStep===2?66:100;
+  const pct=_iWizStep===1?25:_iWizStep===2?50:_iWizStep===3?75:100;
   const pb='<div class="wizard-progress-track"><div class="wizard-progress-fill" style="width:'+pct+'%"></div></div>';
 
   if(_iWizStep===1){
@@ -4658,7 +4661,7 @@ function renderInvestOnboarding(c,el){
       +'</div></div>';
 
   } else if(_iWizStep===2){
-    if(!c.accountInstances) getInvestData(c);
+    if(!c.accountInstances||c.accountInstances.length===0) c.accountInstances=[];
     const instances=c.accountInstances;
     let cards='';
     INVEST_ACCOUNTS.forEach(acct=>{
@@ -4696,21 +4699,54 @@ function renderInvestOnboarding(c,el){
       +'<button class="btnp" style="flex:1;padding:14px;font-size:14px;'+(hasAny?'':'opacity:0.5;cursor:not-allowed;')+'" '+(hasAny?'':'disabled')+' onclick="iWizSaveBalances()">Continue →</button>'
       +'</div></div>';
 
-  } else {
-    if(!c.accountInstances) getInvestData(c);
-    const instances=c.accountInstances;
-    const hasAccounts=instances.length>0;
-    const total=instances.reduce((a,i)=>a+(i.balance||0),0);
+  } else if(_iWizStep===3){
+    // Ask how much they want to invest per month from their margin
+    const totalExp=(c.budget||[]).reduce((a,b)=>a+(b.amount||0),0);
+    const debtMin=(c.debts||[]).reduce((a,d)=>a+(d.monthly||0),0);
+    const goalMo=(c.goals||[]).reduce((a,g)=>a+(g.monthly||0),0);
+    const freeMargin=Math.max(0,(c.income||0)-totalExp-debtMin-goalMo-(c.snowballExtra||0));
+    const saved=(c.investments&&c.investments._mb)||0;
     el.innerHTML='<div class="wizard-step" style="max-width:480px;margin:0 auto;">'
       +pb
       +'<div style="text-align:center;margin-bottom:24px;">'
-      +'<div style="font-size:40px;margin-bottom:12px;">'+(hasAccounts?'🎉':'🌱')+'</div>'
-      +'<div style="font-size:22px;font-weight:700;margin-bottom:8px;">'+(hasAccounts?'You\'re all set!':'No problem!')+'</div>'
-      +'<div style="font-size:13px;color:var(--mt);line-height:1.7;">'
-      +(hasAccounts
-          ?'Your accounts are added. Next, set your <strong>monthly contributions</strong> — how much you put in each account every month.'
-          :'When you\'re ready to start investing, come back here. Your advisor will help you figure out the best place to start.')
-      +'</div></div>'
+      +'<div style="font-size:40px;margin-bottom:10px;">💸</div>'
+      +'<div style="font-size:22px;font-weight:700;margin-bottom:8px;">How much do you want to invest?</div>'
+      +'<div style="font-size:13px;color:var(--mt);line-height:1.6;">Set a monthly investing budget from your free margin. You can always change this later.</div>'
+      +'</div>'
+      +(freeMargin>0
+        ?'<div style="background:var(--gll);border-radius:12px;padding:14px 18px;margin-bottom:20px;border-left:4px solid var(--g);">'
+          +'<div style="font-size:12px;font-weight:600;color:var(--gd);margin-bottom:2px;">Your free margin</div>'
+          +'<div style="font-size:24px;font-weight:700;color:var(--gd);">$'+freeMargin.toLocaleString()+'/mo</div>'
+          +'<div style="font-size:11px;color:var(--gd);margin-top:2px;">after budget, debts &amp; goals</div>'
+          +'</div>'
+        :'')
+      +'<div style="margin-bottom:20px;">'
+      +'<label style="font-size:13px;font-weight:600;color:var(--mt);display:block;margin-bottom:8px;">Monthly investing budget</label>'
+      +'<div style="display:flex;align-items:center;gap:8px;">'
+      +'<span style="font-size:18px;font-weight:700;">$</span>'
+      +'<input type="number" id="iwiz-mb" value="'+(saved||'')+'" placeholder="e.g. 500" min="0" step="25" style="flex:1;font-size:22px;font-weight:700;padding:12px 14px;border:2px solid var(--g);border-radius:10px;" />'
+      +'<span style="font-size:14px;color:var(--mt);">/mo</span>'
+      +'</div>'
+      +(freeMargin>0?'<input type="range" min="0" max="'+freeMargin+'" step="25" value="'+(saved||0)+'" style="width:100%;margin-top:10px;accent-color:var(--g);" oninput="document.getElementById(\'iwiz-mb\').value=this.value" />':'')
+      +'</div>'
+      +'<div style="display:flex;gap:8px;">'
+      +'<button class="btns" onclick="_iWizStep='+(c.accountInstances&&c.accountInstances.length>0?2:1)+';renderPTab()" style="padding:10px 20px;">← Back</button>'
+      +'<button class="btnp" style="flex:1;padding:14px;font-size:14px;" onclick="iWizSaveMonthlyBudget()">Continue →</button>'
+      +'</div></div>';
+
+  } else {
+    if(!c.accountInstances) c.accountInstances=[];
+    const instances=c.accountInstances;
+    const hasAccounts=instances.length>0;
+    const total=instances.reduce((a,i)=>a+(i.balance||0),0);
+    const mb=(c.investments&&c.investments._mb)||0;
+    el.innerHTML='<div class="wizard-step" style="max-width:480px;margin:0 auto;">'
+      +pb
+      +'<div style="text-align:center;margin-bottom:24px;">'
+      +'<div style="font-size:40px;margin-bottom:12px;">🎉</div>'
+      +'<div style="font-size:22px;font-weight:700;margin-bottom:8px;">You\'re all set!</div>'
+      +'<div style="font-size:13px;color:var(--mt);line-height:1.7;">Now assign your $'+mb.toLocaleString()+'/mo investing budget to your accounts below.</div>'
+      +'</div>'
       +(hasAccounts&&total>0
           ?'<div class="card card-accent" style="margin-bottom:16px;">'
             +'<div class="ct">Total invested so far</div>'
@@ -4718,9 +4754,7 @@ function renderInvestOnboarding(c,el){
             +'<div style="font-size:11px;color:var(--mt);margin-top:4px;">across '+instances.length+' account'+(instances.length>1?'s':'')+'</div>'
             +'</div>'
           :'')
-      +'<button class="btnp" style="width:100%;padding:16px;font-size:15px;border-radius:14px;" onclick="iWizFinish()">'
-      +(hasAccounts?'Set monthly contributions →':'Got it')+'</button>'
-      +(!hasAccounts?'<button class="btns" style="width:100%;margin-top:10px;padding:12px;" onclick="_iWizStep=2;renderPTab()">Actually, I do have accounts</button>':'')
+      +'<button class="btnp" style="width:100%;padding:16px;font-size:15px;border-radius:14px;" onclick="iWizFinish()">Allocate to accounts →</button>'
       +'</div>';
   }
 }
@@ -4731,6 +4765,14 @@ function iWizSaveBalances(){
     if(inp) inst.balance=parseFloat(inp.value)||0;
   });
   _iWizStep=3;
+  saveClient(c);
+  renderPTab();
+}
+function iWizSaveMonthlyBudget(){
+  const c=portalClient||activeClient;
+  const val=parseFloat(document.getElementById('iwiz-mb').value)||0;
+  c.investments={...(c.investments||{}),_mb:val};
+  _iWizStep=4;
   saveClient(c);
   renderPTab();
 }
