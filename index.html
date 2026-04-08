@@ -4218,8 +4218,8 @@ function getInvestData(c){
   const totalInvestBudget=investItems.reduce((a,b)=>a+(b.amount||b.budget||0),0);
 
   // accountInstances: [{uid, baseId, label, monthly}]
-  // Migrate legacy c.investments / c.activeAccounts if needed
-  if(!c.accountInstances || c.accountInstances.length===0){
+  // Migrate legacy c.investments / c.activeAccounts if needed — only after setup
+  if(isInvestSetupDone(c) && (!c.accountInstances || c.accountInstances.length===0)){
     const legacyIds=c.activeAccounts&&c.activeAccounts.length>0
       ? c.activeAccounts : INVEST_ACCOUNTS.map(a=>a.id);
     c.accountInstances=legacyIds.map(id=>{
@@ -4227,6 +4227,7 @@ function getInvestData(c){
       return {uid:id+'_1', baseId:id, label:acct?acct.name:'Account', monthly:(c.investments||{})[id]||0};
     });
   }
+  if(!c.accountInstances) c.accountInstances=[];
 
   const allocs={};
   c.accountInstances.forEach(inst=>{ allocs[inst.uid]=inst.monthly||0; });
@@ -4636,8 +4637,8 @@ let pInvestMode='view';
 
 // ── INVESTMENTS ONBOARDING WIZARD ────────────────────────────────────────────
 let _iWizStep=1;
-function isInvestSetupDone(c){try{return localStorage.getItem('lv_isetup_'+c.id)==='1';}catch(e){return false;}}
-function markInvestSetupDone(c){try{localStorage.setItem('lv_isetup_'+c.id,'1');}catch(e){}}
+function isInvestSetupDone(c){return !!(c.investments&&c.investments._setup);}
+function markInvestSetupDone(c){c.investments={...(c.investments||{}),_setup:true};saveClient(c);}
 
 function renderInvestOnboarding(c,el){
   const pct=_iWizStep===1?33:_iWizStep===2?66:100;
