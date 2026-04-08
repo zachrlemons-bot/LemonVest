@@ -4901,10 +4901,19 @@ function renderPInvestments(c,el){
     }
     html+='<div class="card card-accent" style="margin-bottom:10px;">'
       +'<div class="ct">Investment budget</div>'
-      +'<div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(140px,1fr));gap:1px;background:var(--bd);border-radius:8px;overflow:hidden;margin-bottom:8px;">'
-        +'<div style="background:var(--cd);padding:11px 14px;">'
-        +'<div style="font-size:10px;font-weight:600;color:var(--mt);text-transform:uppercase;letter-spacing:.05em;margin-bottom:3px;">Budget for investing</div>'
-        +'<div style="font-size:15px;font-weight:700;color:var(--ink);">$'+totalInvestBudget.toLocaleString()+'/mo</div></div>'
+      +'<div style="display:flex;align-items:flex-end;gap:10px;margin-bottom:12px;">'
+      +'<div style="flex:1;">'
+      +'<div style="font-size:11px;font-weight:600;color:var(--mt);margin-bottom:5px;">Monthly investing budget</div>'
+      +'<div style="display:flex;align-items:center;gap:6px;">'
+      +'<span style="font-size:16px;font-weight:700;">$</span>'
+      +'<input type="number" id="pinv-mb-input" value="'+totalInvestBudget+'" min="0" step="25" style="font-size:20px;font-weight:700;padding:8px 10px;width:130px;border:2px solid var(--g);border-radius:10px;" />'
+      +'<span style="font-size:13px;color:var(--mt);">/mo</span>'
+      +'</div>'
+      +(Math.max(0,_invFreeMargin)>0?'<input type="range" min="0" max="'+Math.max(totalInvestBudget,_invFreeMargin)+'" step="25" value="'+totalInvestBudget+'" style="width:100%;margin-top:8px;accent-color:var(--g);" oninput="document.getElementById(\'pinv-mb-input\').value=this.value;pInvUpdateBudgetTiles(this.value)" />':'')
+      +'</div>'
+      +'<button class="btnp" style="padding:9px 18px;white-space:nowrap;" onclick="pInvSaveBudget()">Save budget</button>'
+      +'</div>'
+      +'<div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(130px,1fr));gap:1px;background:var(--bd);border-radius:8px;overflow:hidden;margin-bottom:8px;">'
         +'<div style="background:var(--cd);padding:11px 14px;">'
         +'<div style="font-size:10px;font-weight:600;color:var(--mt);text-transform:uppercase;letter-spacing:.05em;margin-bottom:3px;">Allocated</div>'
         +'<div id="pinv-tile-alloc" style="font-size:15px;font-weight:700;color:var(--ink);">$'+totalAlloc.toLocaleString()+'/mo</div></div>'
@@ -4912,15 +4921,14 @@ function renderPInvestments(c,el){
         +'<div style="font-size:10px;font-weight:600;color:var(--mt);text-transform:uppercase;letter-spacing:.05em;margin-bottom:3px;">Unallocated</div>'
         +'<div id="pinv-tile-unalloc" style="font-size:15px;font-weight:700;color:'+(unalloc<0?'#A32D2D':'var(--ink)')+';">$'+Math.abs(unalloc).toLocaleString()+(unalloc<0?' over budget':'/mo')+'</div></div>'
       +'</div>'
-      +'<div style="margin-bottom:8px;">'
+      +'<div style="margin-bottom:4px;">'
       +'<div style="height:10px;background:var(--sf);border-radius:5px;overflow:hidden;">'
       +'<div id="pinv-bar" style="height:10px;border-radius:5px;transition:width .2s,background .2s;background:'+(unalloc<0?'#A32D2D':'#2D7A3A')+';width:'+Math.min(100,totalInvestBudget>0?Math.round(totalAlloc/totalInvestBudget*100):0)+'%;"></div>'
       +'</div>'
       +'<div style="display:flex;justify-content:space-between;font-size:10px;color:var(--mt);margin-top:3px;">'
-      +'<span id="pinv-bar-label">'+(totalInvestBudget>0?Math.min(100,Math.round(totalAlloc/totalInvestBudget*100)):0)+'% of investing budget allocated</span>'
+      +'<span id="pinv-bar-label">'+(totalInvestBudget>0?Math.min(100,Math.round(totalAlloc/totalInvestBudget*100)):0)+'% allocated</span>'
       +'<span id="pinv-bar-right">'+(unalloc>=0?'$'+unalloc.toLocaleString()+' still available':'$'+Math.abs(unalloc).toLocaleString()+' over budget')+'</span>'
       +'</div></div>'
-      +(investItems.length===0?'<div style="font-size:11px;color:var(--mt);">Tip: add budget items with categories like "Roth IRA contribution" or "Savings / Investments" in the Budget tab to populate the investment budget automatically.</div>':'')
       +'</div>'
 
       +'<div class="card card-accent" style="margin-bottom:10px;">'
@@ -5048,6 +5056,28 @@ function pInvUpdateTotals(){
   if(bar){bar.style.width=pct+'%';bar.style.background=over?'#A32D2D':'#2D7A3A';}
   if(bl) bl.textContent=pct+'% of investing budget allocated'+(over?' — over by $'+Math.abs(unalloc).toLocaleString():'');
   if(br) br.textContent=over?'$'+Math.abs(unalloc).toLocaleString()+' over budget':'$'+unalloc.toLocaleString()+' still available';
+}
+function pInvSaveBudget(){
+  const c=portalClient||activeClient;
+  const val=parseFloat(document.getElementById('pinv-mb-input').value)||0;
+  c.investments={...(c.investments||{}),_mb:val};
+  saveClient(c);
+  toast('Investing budget updated!');
+  renderPTab();
+}
+function pInvUpdateBudgetTiles(newBudget){
+  const c=portalClient||activeClient;
+  const mb=parseFloat(newBudget)||0;
+  const totalAlloc=(c.accountInstances||[]).reduce((a,i)=>a+(i.monthly||0),0);
+  const unalloc=mb-totalAlloc;
+  const el=document.getElementById('pinv-tile-unalloc');
+  if(el) el.textContent='$'+Math.abs(unalloc).toLocaleString()+(unalloc<0?' over budget':'/mo');
+  const bar=document.getElementById('pinv-bar');
+  if(bar){ bar.style.width=Math.min(100,mb>0?Math.round(totalAlloc/mb*100):0)+'%'; bar.style.background=unalloc<0?'#A32D2D':'#2D7A3A'; }
+  const bl=document.getElementById('pinv-bar-label');
+  if(bl) bl.textContent=(mb>0?Math.min(100,Math.round(totalAlloc/mb*100)):0)+'% allocated';
+  const br=document.getElementById('pinv-bar-right');
+  if(br) br.textContent=unalloc>=0?'$'+unalloc.toLocaleString()+' still available':'$'+Math.abs(unalloc).toLocaleString()+' over budget';
 }
 function pInvSave(){
   const c=portalClient||activeClient;
