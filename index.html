@@ -4888,52 +4888,54 @@ function renderPInvestments(c,el){
     html+=renderCompoundProjections(allocs,'client',c);
 
   } else {
-    // ── EDIT: sliders — identical layout to advisor ───────────────────────
+    // ── EDIT: sliders ─────────────────────────────────────────────────────
     const _invTotalExp=(c.budget||[]).reduce((a,b)=>a+(b.amount||0),0);
     const _invDebtMin=(c.debts||[]).reduce((a,d)=>a+(d.monthly||0),0);
     const _invGoalTotal=(c.goals||[]).reduce((a,g)=>a+(g.monthly||0),0);
-    const _invFreeMargin=(c.income||0)-_invTotalExp-_invDebtMin-_invGoalTotal-(c.snowballExtra||0);
-    if(_invFreeMargin>0){
-      html+='<div style="background:var(--gll);border-radius:12px;padding:12px 18px;margin-bottom:14px;border-left:4px solid var(--g);">'
-        +'<div style="font-size:13px;font-weight:700;color:var(--gd);margin-bottom:2px;">$'+_invFreeMargin.toLocaleString()+'/mo is unallocated from your budget 🌟</div>'
-        +'<div style="font-size:12px;color:var(--gd);">Put it to work — add investment budget items in the Budget tab, then allocate them to accounts below.</div>'
-        +'</div>';
-    }
-    html+='<div class="card card-accent" style="margin-bottom:10px;">'
-      +'<div class="ct">Investment budget</div>'
-      +'<div style="display:flex;align-items:flex-end;gap:10px;margin-bottom:12px;">'
-      +'<div style="flex:1;">'
-      +'<div style="font-size:11px;font-weight:600;color:var(--mt);margin-bottom:5px;">Monthly investing budget</div>'
-      +'<div style="display:flex;align-items:center;gap:6px;">'
-      +'<span style="font-size:16px;font-weight:700;">$</span>'
-      +'<input type="number" id="pinv-mb-input" value="'+totalInvestBudget+'" min="0" step="25" style="font-size:20px;font-weight:700;padding:8px 10px;width:130px;border:2px solid var(--g);border-radius:10px;" />'
-      +'<span style="font-size:13px;color:var(--mt);">/mo</span>'
+    const _invFreeMargin=Math.max(0,(c.income||0)-_invTotalExp-_invDebtMin-_invGoalTotal-(c.snowballExtra||0));
+    const sliderMax=Math.max(totalInvestBudget+_invFreeMargin,totalInvestBudget,500);
+    const allocPct=totalInvestBudget>0?Math.min(100,Math.round(totalAlloc/totalInvestBudget*100)):0;
+
+    // Budget card
+    html+='<div class="card card-accent" style="margin-bottom:12px;">'
+      +'<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:14px;">'
+      +'<div style="font-size:14px;font-weight:700;">Monthly investing budget</div>'
+      +(_invFreeMargin>0?'<span style="font-size:11px;font-weight:600;background:var(--gll);color:var(--gd);padding:3px 10px;border-radius:20px;">$'+_invFreeMargin.toLocaleString()+' free margin available</span>':'')
       +'</div>'
-      +(Math.max(0,_invFreeMargin)>0?'<input type="range" min="0" max="'+Math.max(totalInvestBudget,_invFreeMargin)+'" step="25" value="'+totalInvestBudget+'" style="width:100%;margin-top:8px;accent-color:var(--g);" oninput="document.getElementById(\'pinv-mb-input\').value=this.value;pInvUpdateBudgetTiles(this.value)" />':'')
+      +'<div style="display:flex;align-items:center;gap:8px;margin-bottom:10px;">'
+      +'<span style="font-size:22px;font-weight:700;color:var(--mt);">$</span>'
+      +'<input type="number" id="pinv-mb-input" value="'+totalInvestBudget+'" min="0" step="25" '
+        +'style="font-size:28px;font-weight:700;padding:8px 10px;flex:1;min-width:0;border:2px solid var(--g);border-radius:10px;color:var(--ink);" '
+        +'oninput="pInvUpdateBudgetTiles(this.value)" />'
+      +'<span style="font-size:15px;color:var(--mt);white-space:nowrap;">/mo</span>'
       +'</div>'
-      +'<button class="btnp" style="padding:9px 18px;white-space:nowrap;" onclick="pInvSaveBudget()">Save budget</button>'
+      +'<input type="range" min="0" max="'+sliderMax+'" step="25" value="'+totalInvestBudget+'" '
+        +'style="width:100%;accent-color:var(--g);margin-bottom:12px;" '
+        +'oninput="document.getElementById(\'pinv-mb-input\').value=this.value;pInvUpdateBudgetTiles(this.value)" />'
+      +'<div style="display:grid;grid-template-columns:1fr 1fr;gap:1px;background:var(--bd);border-radius:10px;overflow:hidden;margin-bottom:10px;">'
+        +'<div style="background:var(--cd);padding:10px 14px;">'
+          +'<div style="font-size:10px;font-weight:600;color:var(--mt);text-transform:uppercase;letter-spacing:.05em;margin-bottom:2px;">Allocated</div>'
+          +'<div id="pinv-tile-alloc" style="font-size:16px;font-weight:700;color:var(--ink);">$'+totalAlloc.toLocaleString()+'/mo</div>'
+        +'</div>'
+        +'<div style="background:var(--cd);padding:10px 14px;">'
+          +'<div style="font-size:10px;font-weight:600;color:var(--mt);text-transform:uppercase;letter-spacing:.05em;margin-bottom:2px;">Unallocated</div>'
+          +'<div id="pinv-tile-unalloc" style="font-size:16px;font-weight:700;color:'+(unalloc<0?'#A32D2D':'var(--g)')+';">$'+Math.abs(unalloc).toLocaleString()+(unalloc<0?' over':'  left')+'</div>'
+        +'</div>'
       +'</div>'
-      +'<div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(130px,1fr));gap:1px;background:var(--bd);border-radius:8px;overflow:hidden;margin-bottom:8px;">'
-        +'<div style="background:var(--cd);padding:11px 14px;">'
-        +'<div style="font-size:10px;font-weight:600;color:var(--mt);text-transform:uppercase;letter-spacing:.05em;margin-bottom:3px;">Allocated</div>'
-        +'<div id="pinv-tile-alloc" style="font-size:15px;font-weight:700;color:var(--ink);">$'+totalAlloc.toLocaleString()+'/mo</div></div>'
-        +'<div style="background:var(--cd);padding:11px 14px;">'
-        +'<div style="font-size:10px;font-weight:600;color:var(--mt);text-transform:uppercase;letter-spacing:.05em;margin-bottom:3px;">Unallocated</div>'
-        +'<div id="pinv-tile-unalloc" style="font-size:15px;font-weight:700;color:'+(unalloc<0?'#A32D2D':'var(--ink)')+';">$'+Math.abs(unalloc).toLocaleString()+(unalloc<0?' over budget':'/mo')+'</div></div>'
+      +'<div style="height:8px;background:var(--sf);border-radius:4px;overflow:hidden;margin-bottom:5px;">'
+        +'<div id="pinv-bar" style="height:8px;border-radius:4px;transition:width .25s,background .25s;background:'+(unalloc<0?'#A32D2D':'var(--g)')+';width:'+allocPct+'%;"></div>'
       +'</div>'
-      +'<div style="margin-bottom:4px;">'
-      +'<div style="height:10px;background:var(--sf);border-radius:5px;overflow:hidden;">'
-      +'<div id="pinv-bar" style="height:10px;border-radius:5px;transition:width .2s,background .2s;background:'+(unalloc<0?'#A32D2D':'#2D7A3A')+';width:'+Math.min(100,totalInvestBudget>0?Math.round(totalAlloc/totalInvestBudget*100):0)+'%;"></div>'
+      +'<div style="display:flex;justify-content:space-between;font-size:10px;color:var(--mt);margin-bottom:14px;">'
+        +'<span id="pinv-bar-label">'+allocPct+'% allocated</span>'
+        +'<span id="pinv-bar-right">'+(unalloc>=0?'$'+unalloc.toLocaleString()+' still available':'$'+Math.abs(unalloc).toLocaleString()+' over budget')+'</span>'
       +'</div>'
-      +'<div style="display:flex;justify-content:space-between;font-size:10px;color:var(--mt);margin-top:3px;">'
-      +'<span id="pinv-bar-label">'+(totalInvestBudget>0?Math.min(100,Math.round(totalAlloc/totalInvestBudget*100)):0)+'% allocated</span>'
-      +'<span id="pinv-bar-right">'+(unalloc>=0?'$'+unalloc.toLocaleString()+' still available':'$'+Math.abs(unalloc).toLocaleString()+' over budget')+'</span>'
-      +'</div></div>'
+      +'<button class="btnp" style="width:100%;padding:11px;" onclick="pInvSaveBudget()">Save investing budget</button>'
       +'</div>'
 
-      +'<div class="card card-accent" style="margin-bottom:10px;">'
-      +'<div class="ct">Allocate to accounts</div>'
-      +'<div style="font-size:11px;color:var(--mt);margin-bottom:12px;">Assign monthly amounts to each account. Contribution limits shown. Over-limit flagged in red.</div>';
+      // Accounts card
+      +'<div class="card card-accent" style="margin-bottom:12px;">'
+      +'<div style="font-size:14px;font-weight:700;margin-bottom:4px;">Allocate to accounts</div>'
+      +'<div style="font-size:11px;color:var(--mt);margin-bottom:14px;">Set how much goes to each account per month.</div>';
 
     activeAccounts.forEach(inst=>{
       const acct=INVEST_ACCOUNTS.find(a=>a.id===inst.baseId)||{name:inst.label,limit:null,avgReturn:0.10,taxType:'',desc:'',emoji:''};
@@ -4941,30 +4943,40 @@ function renderPInvestments(c,el){
       const maxSlide=Math.max(totalInvestBudget||1000,current,500);
       const annualContrib=current*12;
       const overLimit=acct.limit&&annualContrib>acct.limit;
-      const limitStr=acct.limit?'$'+acct.limit.toLocaleString()+'/yr':(acct.annualGiftLimit?'$'+acct.annualGiftLimit.toLocaleString()+' gift/yr':'No limit');
+      const limitStr=acct.limit?'$'+acct.limit.toLocaleString()+'/yr':'No limit';
 
       html+='<div style="padding:14px 0;border-bottom:0.5px solid var(--bd);">'
-        +'<div style="display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:3px;">'
-        +'<span style="font-size:13px;font-weight:700;">'+acct.emoji+' '+inst.label+'</span>'
-        +'<div style="display:flex;gap:6px;align-items:center;">'
-        +'<span style="font-size:10px;color:var(--mt);">'+acct.taxType+'</span>'
-        +'<span style="font-size:10px;font-weight:600;background:var(--sf);padding:2px 7px;border-radius:20px;color:var(--mt);">'+limitStr+'</span>'
-        +(overLimit?'<span style="font-size:10px;font-weight:700;background:#FCEBEB;color:#A32D2D;padding:2px 8px;border-radius:20px;">Over limit</span>':'')
-        +'</div></div>'
-        +'<div style="font-size:11px;color:var(--mt);margin-bottom:8px;">'+acct.desc+'</div>'
-        +'<div style="display:flex;align-items:center;gap:8px;margin-bottom:10px;">'
-        +'<span style="font-size:11px;color:var(--mt);white-space:nowrap;">Current balance: $</span>'
-        +'<input type="number" id="pinvbal-'+inst.uid+'" value="'+(inst.balance||'')+'" placeholder="0" style="width:110px;padding:5px 8px;font-size:13px;font-weight:700;border:1.5px solid var(--bd);border-radius:8px;" />'
+        // Header row: name + badges
+        +'<div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-bottom:4px;">'
+          +'<span style="font-size:14px;font-weight:700;">'+acct.emoji+' '+inst.label+'</span>'
+          +(acct.taxType?'<span style="font-size:10px;font-weight:600;background:var(--sf);padding:2px 8px;border-radius:20px;color:var(--mt);">'+acct.taxType+'</span>':'')
+          +'<span style="font-size:10px;font-weight:600;background:var(--sf);padding:2px 8px;border-radius:20px;color:var(--mt);">'+limitStr+'</span>'
+          +(overLimit?'<span style="font-size:10px;font-weight:700;background:#FCEBEB;color:#A32D2D;padding:2px 8px;border-radius:20px;">Over limit</span>':'')
         +'</div>'
-        +'<input type="range" id="pinv-'+inst.uid+'" min="0" max="'+maxSlide+'" step="25" value="'+current+'" style="width:100%;accent-color:var(--g);margin-bottom:6px;" oninput="pInvSlide(this.id.slice(5))" />'
-        +'<div style="display:flex;align-items:center;justify-content:space-between;gap:12px;">'
-        +'<div style="display:flex;align-items:center;gap:6px;">'
-        +'<span style="font-size:12px;color:var(--mt);">$</span>'
-        +'<input type="number" id="pinvn-'+inst.uid+'" value="'+current+'" min="0" step="25" style="font-size:16px;font-weight:700;padding:5px 8px;width:85px;border:2px solid '+(overLimit?'#A32D2D':'var(--g)')+';border-radius:8px;" oninput="pInvNum(this.id.slice(6))" />'
-        +'<span style="font-size:12px;color:var(--mt);">/mo</span>'
+        // Description
+        +'<div style="font-size:11px;color:var(--mt);margin-bottom:10px;">'+acct.desc+'</div>'
+        // Balance row
+        +'<div style="display:flex;align-items:center;gap:6px;margin-bottom:10px;">'
+          +'<span style="font-size:11px;color:var(--mt);">Balance</span>'
+          +'<span style="font-size:13px;font-weight:600;color:var(--mt);">$</span>'
+          +'<input type="number" id="pinvbal-'+inst.uid+'" value="'+(inst.balance||'')+'" placeholder="0" '
+            +'style="width:100px;padding:5px 8px;font-size:13px;font-weight:700;border:1.5px solid var(--bd);border-radius:8px;" />'
         +'</div>'
-        +'<span id="pinv-yr-'+inst.uid+'" style="font-size:11px;color:var(--mt);">$'+(current*12).toLocaleString()+'/yr'+(acct.limit?' of $'+acct.limit.toLocaleString():'')+'</span>'
-        +'</div></div>';
+        // Slider
+        +'<input type="range" id="pinv-'+inst.uid+'" min="0" max="'+maxSlide+'" step="25" value="'+current+'" '
+          +'style="width:100%;accent-color:var(--g);margin-bottom:8px;" oninput="pInvSlide(this.id.slice(5))" />'
+        // Amount row
+        +'<div style="display:flex;align-items:center;justify-content:space-between;gap:8px;">'
+          +'<div style="display:flex;align-items:center;gap:5px;">'
+            +'<span style="font-size:13px;color:var(--mt);font-weight:600;">$</span>'
+            +'<input type="number" id="pinvn-'+inst.uid+'" value="'+current+'" min="0" step="25" '
+              +'style="font-size:18px;font-weight:700;padding:5px 8px;width:90px;border:2px solid '+(overLimit?'#A32D2D':'var(--g)')+';border-radius:8px;" '
+              +'oninput="pInvNum(this.id.slice(6))" />'
+            +'<span style="font-size:12px;color:var(--mt);">/mo</span>'
+          +'</div>'
+          +'<span id="pinv-yr-'+inst.uid+'" style="font-size:11px;color:var(--mt);">$'+(current*12).toLocaleString()+'/yr'+(acct.limit?' · limit $'+acct.limit.toLocaleString():'')+'</span>'
+        +'</div>'
+        +'</div>';
     });
 
     html+='<div style="display:flex;justify-content:space-between;align-items:center;padding:12px 0 0;border-top:1px solid var(--bd);margin-top:4px;">'
@@ -5070,12 +5082,13 @@ function pInvUpdateBudgetTiles(newBudget){
   const mb=parseFloat(newBudget)||0;
   const totalAlloc=(c.accountInstances||[]).reduce((a,i)=>a+(i.monthly||0),0);
   const unalloc=mb-totalAlloc;
-  const el=document.getElementById('pinv-tile-unalloc');
-  if(el) el.textContent='$'+Math.abs(unalloc).toLocaleString()+(unalloc<0?' over budget':'/mo');
+  const pct=mb>0?Math.min(100,Math.round(totalAlloc/mb*100)):0;
+  const uEl=document.getElementById('pinv-tile-unalloc');
+  if(uEl){uEl.textContent='$'+Math.abs(unalloc).toLocaleString()+(unalloc<0?' over':'  left');uEl.style.color=unalloc<0?'#A32D2D':'var(--g)';}
   const bar=document.getElementById('pinv-bar');
-  if(bar){ bar.style.width=Math.min(100,mb>0?Math.round(totalAlloc/mb*100):0)+'%'; bar.style.background=unalloc<0?'#A32D2D':'#2D7A3A'; }
+  if(bar){bar.style.width=pct+'%';bar.style.background=unalloc<0?'#A32D2D':'var(--g)';}
   const bl=document.getElementById('pinv-bar-label');
-  if(bl) bl.textContent=(mb>0?Math.min(100,Math.round(totalAlloc/mb*100)):0)+'% allocated';
+  if(bl) bl.textContent=pct+'% allocated';
   const br=document.getElementById('pinv-bar-right');
   if(br) br.textContent=unalloc>=0?'$'+unalloc.toLocaleString()+' still available':'$'+Math.abs(unalloc).toLocaleString()+' over budget';
 }
