@@ -693,6 +693,41 @@ function tryParse(val, fallback){
 }
 
 // ── SAVE (used everywhere in the app) ───
+
+// ── Centralized allocation math ─────────────
+// Single source of truth for how margin flows to goals, debt snowball, and investments.
+// investBudgetInExpenses = invest budget-line items already counted inside `expenses`.
+// Any invest allocation beyond what's already in expenses is drawn from free margin.
+function computeAllocations(c){
+  if(!c) return {income:0,expenses:0,debtMin:0,margin:0,goalTotal:0,snowballExtra:0,investTotal:0,investBudgetInExpenses:0,extraInvestFromMargin:0,unallocated:0};
+  const income=c.income||0;
+  const expenses=(c.budget||[]).reduce((a,b)=>a+(b.amount||b.budget||0),0);
+  const debtMin=(c.debts||[]).reduce((a,d)=>a+(d.monthly||0),0);
+  const margin=income-expenses-debtMin;
+  const goalTotal=(c.goals||[]).reduce((a,g)=>a+(g.monthly||0),0);
+  const snowballExtra=Math.max(0,c.snowballExtra||0);
+  const investTotal=(c.accountInstances||[]).reduce((a,i)=>a+(i.monthly||0),0);
+
+  // Invest categories already reflected inside `expenses`
+  const investCats=['Savings / Investments','401(k) contribution','Roth IRA contribution',
+    'Traditional IRA contribution','HSA contribution','Brokerage / Investing',
+    'Emergency fund savings','529 / College savings','HYSA'];
+  const investBudgetInExpenses=(c.budget||[]).filter(b=>{
+    const cat=(b.category||'').toLowerCase();
+    const nm=(b.name||'').toLowerCase();
+    return investCats.some(ic=>cat.includes(ic.toLowerCase().split(' ')[0]))
+      ||nm.includes('invest')||nm.includes('ira')||nm.includes('401')
+      ||nm.includes('hsa')||nm.includes('saving')||nm.includes('brokerage')
+      ||cat.includes('invest')||cat.includes('saving')||cat.includes('401')
+      ||cat.includes('ira')||cat.includes('hsa');
+  }).reduce((a,b)=>a+(b.amount||b.budget||0),0);
+
+  // Only the portion of invest allocations beyond what's already in expenses draws from margin
+  const extraInvestFromMargin=Math.max(0,investTotal-investBudgetInExpenses);
+  const unallocated=margin-goalTotal-snowballExtra-extraInvestFromMargin;
+  return {income,expenses,debtMin,margin,goalTotal,snowballExtra,investTotal,investBudgetInExpenses,extraInvestFromMargin,unallocated};
+}
+
 // ── Recalculate all derived totals after any edit ──
 function syncClientTotals(c){
   if(!c) return;
@@ -1953,9 +1988,11 @@ function renderTheNumbers(c,el){
 let goalsViewMode = 'view';
 
 // Shared margin breakdown bar used in both advisor and portal goals tabs
-function buildMarginBreakdown(margin, goalTotal, snowballExtra, unallocated){
+function buildMarginBreakdown(margin, goalTotal, snowballExtra, unallocated, investFromMargin){
+  investFromMargin=investFromMargin||0;
   const goalsBarPct=margin>0?Math.min(100,Math.round(goalTotal/margin*100)):0;
   const snowballBarPct=margin>0?Math.min(100-goalsBarPct,Math.round(snowballExtra/margin*100)):0;
+  const investBarPct=margin>0?Math.min(100-goalsBarPct-snowballBarPct,Math.round(investFromMargin/margin*100)):0;
   const uCol=unallocated<0?'#A32D2D':unallocated===0?'var(--mt)':'#2D7A3A';
   return '<div style="margin-top:12px;">'
     +'<div style="display:flex;justify-content:space-between;font-size:11px;font-weight:600;margin-bottom:5px;">'
@@ -1964,6 +2001,7 @@ function buildMarginBreakdown(margin, goalTotal, snowballExtra, unallocated){
     +'<div style="height:8px;background:var(--sf);border-radius:4px;overflow:hidden;display:flex;margin-bottom:8px;">'
     +'<div style="height:8px;background:#2D7A3A;width:'+goalsBarPct+'%;"></div>'
     +(snowballBarPct>0?'<div style="height:8px;background:#BA7517;width:'+snowballBarPct+'%;"></div>':'')
+    +(investBarPct>0?'<div style="height:8px;background:#185FA5;width:'+investBarPct+'%;"></div>':'')
     +'</div>'
     +'<div style="display:flex;flex-direction:column;gap:3px;">'
     +'<div style="display:flex;justify-content:space-between;font-size:11px;">'
@@ -1974,6 +2012,11 @@ function buildMarginBreakdown(margin, goalTotal, snowballExtra, unallocated){
       +'<span style="display:flex;align-items:center;gap:5px;"><span style="width:9px;height:9px;border-radius:2px;background:#BA7517;display:inline-block;"></span>Debt snowball</span>'
       +'<span style="font-weight:700;">$'+snowballExtra.toLocaleString()+'/mo</span></div>':''
     )
+    +(investFromMargin>0
+      ?'<div style="display:flex;justify-content:space-between;font-size:11px;">'
+      +'<span style="display:flex;align-items:center;gap:5px;"><span style="width:9px;height:9px;border-radius:2px;background:#185FA5;display:inline-block;"></span>Investments (from margin)</span>'
+      +'<span style="font-weight:700;">$'+investFromMargin.toLocaleString()+'/mo</span></div>':''
+    )
     +'<div style="display:flex;justify-content:space-between;font-size:11px;border-top:0.5px solid var(--bd);padding-top:4px;margin-top:2px;">'
     +'<span style="color:var(--mt);">Unallocated</span>'
     +'<span style="font-weight:700;color:'+uCol+';">$'+unallocated.toLocaleString()+'/mo</span></div>'
@@ -1981,13 +2024,13 @@ function buildMarginBreakdown(margin, goalTotal, snowballExtra, unallocated){
 }
 
 function renderGoalsTab(c,el){
-  const income = c.income||1;
-  const totalExp = c.budget.reduce((a,b)=>a+(b.amount||b.budget||0),0);
-  const debtMin = (c.debts||[]).reduce((a,d)=>a+(d.monthly||0),0);
-  const margin = Math.max(0, income - totalExp - debtMin);
-  const goalTotal = c.goals.reduce((a,g)=>a+(g.monthly||0),0);
-  const snowballExtra = c.snowballExtra||0;
-  const unallocated = margin - goalTotal - snowballExtra;
+  const A = computeAllocations(c);
+  const margin = Math.max(0,A.margin);
+  const goalTotal = A.goalTotal;
+  const snowballExtra = A.snowballExtra;
+  const investTotal = A.investTotal;
+  const extraInvestFromMargin = A.extraInvestFromMargin;
+  const unallocated = A.unallocated;
 
   // Toggle buttons — same style as budget
   let html='<div style="display:flex;gap:8px;margin-bottom:14px;">'
@@ -2004,6 +2047,7 @@ function renderGoalsTab(c,el){
         {l:'Free margin',v:'$'+margin.toLocaleString()+'/mo'},
         {l:'To goals',v:'$'+goalTotal.toLocaleString()+'/mo'},
         ...(snowballExtra>0?[{l:'Debt snowball',v:'$'+snowballExtra.toLocaleString()+'/mo'}]:[]),
+        ...(extraInvestFromMargin>0?[{l:'To investments',v:'$'+extraInvestFromMargin.toLocaleString()+'/mo'}]:[]),
         {l:'Unallocated',v:'$'+unallocated.toLocaleString()+'/mo',col:unallocated<0?'#A32D2D':unallocated===0?'var(--mt)':'#2D7A3A'},
         {l:'Goals count',v:c.goals.length+' goal'+(c.goals.length!==1?'s':'')},
       ].map(m=>'<div style="background:var(--cd);padding:12px 14px;">'
@@ -2061,8 +2105,9 @@ function renderGoalsTab(c,el){
 
       // Margin allocation bar
       html+='<div style="border:0.5px solid var(--bd);border-radius:8px;padding:12px 14px;">'
-        +buildMarginBreakdown(margin,goalTotal,snowballExtra,unallocated)
+        +buildMarginBreakdown(margin,goalTotal,snowballExtra,unallocated,extraInvestFromMargin)
         +(snowballExtra>0?'<div style="margin-top:6px;font-size:10px;color:var(--mt);">Snowball extra — <a onclick="setDashTab(\'debt snowball\')" style="color:var(--g);cursor:pointer;font-weight:600;">edit in Debt snowball tab →</a></div>':'')
+        +(extraInvestFromMargin>0?'<div style="margin-top:6px;font-size:10px;color:var(--mt);">Investment allocation — <a onclick="setDashTab(\'investments\')" style="color:var(--g);cursor:pointer;font-weight:600;">edit in Investments tab →</a></div>':'')
         +'</div>';
     }
 
@@ -2075,6 +2120,7 @@ function renderGoalsTab(c,el){
       +'<div style="text-align:center;"><div style="font-size:10px;font-weight:700;color:var(--gd);">FREE MARGIN</div><div style="font-size:20px;font-weight:700;color:var(--g);">$'+margin.toLocaleString()+'/mo</div></div>'
       +'<div style="text-align:center;"><div style="font-size:10px;font-weight:700;color:var(--gd);">TO GOALS</div><div id="adv-goal-total-disp" style="font-size:20px;font-weight:700;">$'+goalTotal.toLocaleString()+'/mo</div></div>'
       +(snowballExtra>0?'<div style="text-align:center;"><div style="font-size:10px;font-weight:700;color:var(--gd);">DEBT SNOWBALL</div><div style="font-size:20px;font-weight:700;color:#BA7517;">$'+snowballExtra.toLocaleString()+'/mo</div></div>':'')
+      +(extraInvestFromMargin>0?'<div style="text-align:center;"><div style="font-size:10px;font-weight:700;color:var(--gd);">INVESTMENTS</div><div style="font-size:20px;font-weight:700;color:#185FA5;">$'+extraInvestFromMargin.toLocaleString()+'/mo</div></div>':'')
       +'<div style="text-align:center;"><div style="font-size:10px;font-weight:700;color:var(--gd);">STILL FREE</div><div id="adv-unalloc-disp" style="font-size:20px;font-weight:700;color:'+(unallocated>=0?'#2D7A3A':'#A32D2D')+';">$'+unallocated.toLocaleString()+'/mo</div></div>'
       +'</div>'
       +(snowballExtra>0?'<div style="text-align:center;font-size:10px;color:var(--gd);margin-top:8px;opacity:.8;">Snowball extra is set in the Debt snowball tab</div>':'')
@@ -2200,17 +2246,20 @@ function advRefreshTimeline(i){
 }
 function advRefreshMarginBanner(){
   const c=activeClient;
-  const income=c.income||0;
-  const totalExp=(c.budget||[]).reduce((a,b)=>a+(b.amount||b.budget||0),0);
-  const debtMin=(c.debts||[]).reduce((a,d)=>a+(d.monthly||0),0);
-  const margin=Math.max(0,income-totalExp-debtMin);
-  const snowballExtra=c.snowballExtra||0;
-  // Sum current slider values
+  if(!c) return;
+  const A=computeAllocations(c);
+  const margin=Math.max(0,A.margin);
+  const snowballExtra=A.snowballExtra;
+  const extraInvestFromMargin=A.extraInvestFromMargin;
+  // Sum current slider values (live edits in goals tab)
   let goalTotal=0;
+  let anySlider=false;
   (c.goals||[]).forEach((_,i)=>{
-    goalTotal+=parseInt(document.getElementById('agm-'+i)?.value)||0;
+    const sv=document.getElementById('agm-'+i);
+    if(sv){anySlider=true; goalTotal+=parseInt(sv.value)||0;}
   });
-  const unallocated=margin-goalTotal-snowballExtra;
+  if(!anySlider) goalTotal=A.goalTotal;
+  const unallocated=margin-goalTotal-snowballExtra-extraInvestFromMargin;
   const totalEl=document.getElementById('adv-goal-total-disp');
   const unallocEl=document.getElementById('adv-unalloc-disp');
   if(totalEl) totalEl.textContent='$'+goalTotal.toLocaleString()+'/mo';
@@ -3926,12 +3975,9 @@ function renderPortal(c){
   if(!c.budget) c.budget=[];
   if(!c.goals) c.goals=[];
   if(!c.debts) c.debts=[];
-  const totalExp = c.budget.reduce((a,b)=>a+(b.amount||0),0);
-  const debtMin = (c.debts||[]).reduce((a,d)=>a+(d.monthly||0),0);
-  const margin = c.income - totalExp - debtMin;
-  const goalTotal = c.goals.reduce((a,g)=>a+(g.monthly||0),0);
-  const snowballExtra = c.snowballExtra||0;
-  const unallocated = margin - goalTotal - snowballExtra;
+  const A = computeAllocations(c);
+  const margin = A.margin;
+  const unallocated = A.unallocated;
   const {totalInvestBudget,totalAlloc} = getInvestData(c);
   const investUnalloc = totalInvestBudget - totalAlloc;
   const tabs = ['dashboard','budget','transactions','goals','investments','debt snowball','messages','ai advisor'];
@@ -3957,12 +4003,8 @@ function renderPortal(c){
 function updatePortalHeader(){
   const c=portalClient||activeClient;
   if(!c) return;
-  const totalExp=(c.budget||[]).reduce((a,b)=>a+(b.amount||0),0);
-  const debtMin=(c.debts||[]).reduce((a,d)=>a+(d.monthly||0),0);
-  const margin=c.income-totalExp-debtMin;
-  const goalTotal=(c.goals||[]).reduce((a,g)=>a+(g.monthly||0),0);
-  const snowballExtra=c.snowballExtra||0;
-  const unallocated=margin-goalTotal-snowballExtra;
+  const A=computeAllocations(c);
+  const unallocated=A.unallocated;
 
   const el=document.getElementById('portal-header-unallocated');
   if(el){
@@ -4360,6 +4402,77 @@ function fmtK(v){
   return '$'+Math.round(v).toLocaleString();
 }
 
+// ── Investing order of operations — decides which step a client is currently on ──
+function computeInvestingStep(c){
+  const expenses=(c.budget||[]).reduce((a,b)=>a+(b.amount||b.budget||0),0);
+  const efSaved=getEmergencyFundSaved(c);
+  const efMonths=expenses>0?efSaved/expenses:0;
+  const debts=(c.debts||[]).filter(d=>(d.balance||0)>0);
+  const highRateDebt=debts.find(d=>(d.rate||0)>=7);
+  const anyDebt=debts.length>0;
+  // Has any 401k allocation? (employer match heuristic — any 401k contribution counts as step 2 done)
+  const has401kContrib=(c.accountInstances||[]).some(i=>i.baseId==='401k'&&(i.monthly||0)>0);
+  const rothInst=(c.accountInstances||[]).find(i=>i.baseId==='roth');
+  const rothYr=(rothInst?.monthly||0)*12;
+  const rothMaxed=rothYr>=7000;
+  const k401Inst=(c.accountInstances||[]).find(i=>i.baseId==='401k');
+  const k401Yr=(k401Inst?.monthly||0)*12;
+  const k401Maxed=k401Yr>=23000;
+
+  const steps=[
+    {n:1, k:'starter-ef', label:'Starter emergency fund', sub:'Save $1k–$2k buffer before anything else',
+      done: efSaved>=1000},
+    {n:2, k:'match', label:'Get full employer 401(k) match',
+      sub:'Free money — contribute at least enough to capture the full match',
+      done: has401kContrib},
+    {n:3, k:'high-rate', label:'Crush high-interest debt',
+      sub:'Any debt above ~7% APR (credit cards, personal loans)',
+      done: !highRateDebt},
+    {n:4, k:'full-ef', label:'Fully fund 3–6 month emergency fund',
+      sub:'Based on '+Math.round(efMonths*10)/10+' months currently saved',
+      done: efMonths>=3},
+    {n:5, k:'roth', label:'Max a Roth IRA ($7,000/yr)',
+      sub:'Tax-free growth — huge long-term win if you qualify',
+      done: rothMaxed},
+    {n:6, k:'401k', label:'Max 401(k) / HSA',
+      sub:'401(k) limit $23,000/yr. HSA if you have HDHP coverage',
+      done: k401Maxed},
+    {n:7, k:'taxable', label:'Taxable brokerage & other goals',
+      sub:'No limits — for goals beyond retirement or after maxing tax-advantaged accounts',
+      done: false}
+  ];
+  const currentIdx=steps.findIndex(s=>!s.done);
+  return {steps, currentIdx: currentIdx<0?steps.length-1:currentIdx};
+}
+
+function buildInvestingSequence(c){
+  const {steps, currentIdx} = computeInvestingStep(c);
+  let html='<div class="card card-accent" style="margin-bottom:10px;">'
+    +'<div class="ct">🧭 The order of investing</div>'
+    +'<div style="font-size:12px;color:var(--mt);margin-bottom:12px;">There is a smart sequence for turning margin into wealth. Work through each step in order — each one unlocks more value than the next.</div>'
+    +'<div style="display:flex;flex-direction:column;gap:6px;">';
+  steps.forEach((s,i)=>{
+    const isCurrent=i===currentIdx;
+    const done=s.done;
+    const bg=done?'#E6F5E9':isCurrent?'var(--gll)':'var(--cd)';
+    const border=done?'#2D7A3A':isCurrent?'var(--g)':'var(--bd)';
+    const numBg=done?'#2D7A3A':isCurrent?'var(--g)':'var(--bd)';
+    const numColor=(done||isCurrent)?'#fff':'var(--mt)';
+    const icon=done?'✓':s.n;
+    html+='<div style="display:flex;align-items:flex-start;gap:10px;padding:10px 12px;border:2px solid '+border+';border-radius:10px;background:'+bg+';">'
+      +'<div style="width:26px;height:26px;border-radius:50%;background:'+numBg+';color:'+numColor+';font-size:12px;font-weight:700;display:flex;align-items:center;justify-content:center;flex-shrink:0;">'+icon+'</div>'
+      +'<div style="flex:1;">'
+      +'<div style="font-size:13px;font-weight:700;">'+s.label
+      +(isCurrent?' <span style="font-size:10px;font-weight:700;background:var(--g);color:#fff;padding:2px 8px;border-radius:12px;margin-left:4px;">YOU ARE HERE</span>':'')
+      +(done?' <span style="font-size:10px;font-weight:700;color:#2D7A3A;margin-left:4px;">done</span>':'')
+      +'</div>'
+      +'<div style="font-size:11px;color:var(--mt);margin-top:2px;">'+s.sub+'</div>'
+      +'</div></div>';
+  });
+  html+='</div></div>';
+  return html;
+}
+
 // ── ADVISOR VIEW ─────────────────────────────────────────────────────────
 let investViewMode = 'view';
 
@@ -4368,6 +4481,9 @@ function renderInvestmentsTab(c,el){
   const totalAlloc=Object.values(allocs).reduce((a,v)=>a+(v||0),0);
   const unalloc=totalInvestBudget-totalAlloc;
   const years=[10,20,30];
+  // Allocation context from shared helper
+  const A=computeAllocations(c);
+  const freeForInvestments=Math.max(0, A.margin - A.goalTotal - A.snowballExtra); // what's available to invest on top of what's already in expenses
 
   // Toggle
   let html='<div style="display:flex;gap:8px;margin-bottom:14px;flex-wrap:wrap;">'
@@ -4379,6 +4495,8 @@ function renderInvestmentsTab(c,el){
   if(investViewMode==='view'){
     // ── VIEW: clean snapshot + projections ─────────────────────────────
     const aTotalBalance=(c.accountInstances||[]).reduce((a,i)=>a+(i.balance||0),0);
+
+    html+=buildInvestingSequence(c);
 
     // Summary tiles
     html+='<div class="card card-accent" style="margin-bottom:10px;">'
@@ -4467,6 +4585,8 @@ function renderInvestmentsTab(c,el){
   } else {
     // ── EDIT: sliders for each account ─────────────────────────────────
 
+    html+=buildInvestingSequence(c);
+
     html+='<div class="card card-accent" style="margin-bottom:10px;">'
       +'<div class="ct">Investment budget</div>'
       +'<div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(140px,1fr));gap:1px;background:var(--bd);border-radius:8px;overflow:hidden;margin-bottom:8px;">'
@@ -4477,8 +4597,11 @@ function renderInvestmentsTab(c,el){
         +'<div style="font-size:10px;font-weight:600;color:var(--mt);text-transform:uppercase;letter-spacing:.05em;margin-bottom:3px;">Allocated</div>'
         +'<div id="ainv-tile-alloc" style="font-size:15px;font-weight:700;color:var(--ink);">$'+totalAlloc.toLocaleString()+'/mo</div></div>'
         +'<div style="background:var(--cd);padding:11px 14px;">'
-        +'<div style="font-size:10px;font-weight:600;color:var(--mt);text-transform:uppercase;letter-spacing:.05em;margin-bottom:3px;">Unallocated</div>'
+        +'<div style="font-size:10px;font-weight:600;color:var(--mt);text-transform:uppercase;letter-spacing:.05em;margin-bottom:3px;">Unallocated (budget)</div>'
         +'<div id="ainv-tile-unalloc" style="font-size:15px;font-weight:700;color:'+(unalloc<0?'#A32D2D':'var(--ink)')+';">$'+Math.abs(unalloc).toLocaleString()+(unalloc<0?' over budget':'/mo')+'</div></div>'
+        +'<div style="background:var(--gll);padding:11px 14px;border-left:3px solid var(--g);">'
+        +'<div style="font-size:10px;font-weight:600;color:var(--gd);text-transform:uppercase;letter-spacing:.05em;margin-bottom:3px;">Free margin left</div>'
+        +'<div id="ainv-tile-freemargin" style="font-size:15px;font-weight:700;color:'+(A.unallocated<0?'#A32D2D':'var(--g)')+';">$'+A.unallocated.toLocaleString()+'/mo</div></div>'
       +'</div>'
       +'<div style="margin-bottom:8px;">'
       +'<div style="height:10px;background:var(--sf);border-radius:5px;overflow:hidden;">'
@@ -4502,21 +4625,23 @@ function renderInvestmentsTab(c,el){
       const annualContrib=current*12;
       const overLimit=acct.limit&&annualContrib>acct.limit;
       const limitStr=acct.limit?'$'+acct.limit.toLocaleString()+'/yr':(acct.annualGiftLimit?'$'+acct.annualGiftLimit.toLocaleString()+' gift/yr':'No limit');
+      const maxMonthly=acct.limit?Math.round(acct.limit/12):null;
 
       html+='<div style="padding:14px 0;border-bottom:0.5px solid var(--bd);">'
         +'<div style="display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:3px;">'
         +'<span style="font-size:13px;font-weight:700;">'+acct.emoji+' '+inst.label+'</span>'
-        +'<div style="display:flex;gap:6px;align-items:center;">'
+        +'<div style="display:flex;gap:6px;align-items:center;flex-wrap:wrap;">'
         +'<span style="font-size:10px;color:var(--mt);">'+acct.taxType+'</span>'
         +'<span style="font-size:10px;font-weight:600;background:var(--sf);padding:2px 7px;border-radius:20px;color:var(--mt);">'+limitStr+'</span>'
         +(overLimit?'<span style="font-size:10px;font-weight:700;background:#FCEBEB;color:#A32D2D;padding:2px 8px;border-radius:20px;">Over limit</span>':'')
+        +(maxMonthly?'<button class="btny" style="font-size:10px;padding:3px 10px;font-weight:700;" onclick="investMaxOut(\''+inst.uid+'\',\''+'advisor'+'\','+maxMonthly+')">💎 Max out ($'+maxMonthly.toLocaleString()+'/mo)</button>':'')
         +'</div></div>'
         +'<div style="font-size:11px;color:var(--mt);margin-bottom:8px;">'+acct.desc+'</div>'
         +'<div style="display:flex;align-items:center;gap:8px;margin-bottom:10px;">'
         +'<span style="font-size:11px;color:var(--mt);white-space:nowrap;">Current balance: $</span>'
         +'<input type="number" id="ainvbal-'+inst.uid+'" value="'+(inst.balance||'')+'" placeholder="0" style="width:110px;padding:5px 8px;font-size:13px;font-weight:700;border:1.5px solid var(--bd);border-radius:8px;" />'
         +'</div>'
-        +'<input type="range" id="ainv-'+inst.uid+'" min="0" max="'+maxSlide+'" step="25" value="'+current+'" style="width:100%;accent-color:var(--g);margin-bottom:6px;" oninput="aInvSlide(this.id.slice(5))" />'
+        +'<input type="range" id="ainv-'+inst.uid+'" min="0" max="'+Math.max(maxSlide,(maxMonthly||0))+'" step="25" value="'+current+'" style="width:100%;accent-color:var(--g);margin-bottom:6px;" oninput="aInvSlide(this.id.slice(5))" />'
         +'<div style="display:flex;align-items:center;justify-content:space-between;gap:12px;">'
         +'<div style="display:flex;align-items:center;gap:6px;">'
         +'<span style="font-size:12px;color:var(--mt);">$</span>'
@@ -4620,6 +4745,26 @@ function aInvUpdateTotals(){
   if(bar){bar.style.width=pct+'%';bar.style.background=over?'#A32D2D':'#2D7A3A';}
   if(bl) bl.textContent=pct+'% of investing budget allocated'+(over?' — over by $'+Math.abs(unalloc).toLocaleString():'');
   if(br) br.textContent=over?'$'+Math.abs(unalloc).toLocaleString()+' over budget':'$'+unalloc.toLocaleString()+' still available';
+
+  // Live free-margin recalc — simulates saving the in-progress allocations
+  const fm=document.getElementById('ainv-tile-freemargin');
+  if(fm){
+    const investBudgetInExpenses=(c.budget||[]).filter(b=>{
+      const cat=(b.category||'').toLowerCase(), nm=(b.name||'').toLowerCase();
+      return cat.includes('invest')||cat.includes('saving')||cat.includes('401')||cat.includes('ira')||cat.includes('hsa')
+        ||nm.includes('invest')||nm.includes('ira')||nm.includes('401')||nm.includes('hsa')||nm.includes('saving')||nm.includes('brokerage');
+    }).reduce((a,b)=>a+(b.amount||b.budget||0),0);
+    const extraFromMargin=Math.max(0, total - investBudgetInExpenses);
+    const income=c.income||0;
+    const expenses=(c.budget||[]).reduce((a,b)=>a+(b.amount||b.budget||0),0);
+    const debtMin=(c.debts||[]).reduce((a,d)=>a+(d.monthly||0),0);
+    const margin=income-expenses-debtMin;
+    const goalTotal=(c.goals||[]).reduce((a,g)=>a+(g.monthly||0),0);
+    const snowballExtra=Math.max(0,c.snowballExtra||0);
+    const freeLeft=margin-goalTotal-snowballExtra-extraFromMargin;
+    fm.textContent='$'+freeLeft.toLocaleString()+'/mo';
+    fm.style.color=freeLeft<0?'#A32D2D':'var(--g)';
+  }
 }
 function aInvSave(){
   const c=activeClient;
@@ -4630,9 +4775,27 @@ function aInvSave(){
     const balInp=document.getElementById('ainvbal-'+inst.uid);
     if(balInp) inst.balance=parseFloat(balInp.value)||0;
   });
+  syncClientTotals(c);
   saveData();toast('Investment allocations saved!');
   investViewMode='view';
   renderDashContent();
+}
+
+// ── Max-out an account to its annual limit (divided by 12) ───────────────
+function investMaxOut(uid, side, maxMonthly){
+  const c = side==='advisor' ? activeClient : (portalClient||activeClient);
+  const pfx = side==='advisor' ? 'ainvn-' : 'pinvn-';
+  const sfx = side==='advisor' ? 'ainv-' : 'pinv-';
+  const numEl=document.getElementById(pfx+uid);
+  const slideEl=document.getElementById(sfx+uid);
+  if(numEl) numEl.value=maxMonthly;
+  if(slideEl){
+    if(parseInt(slideEl.max)<maxMonthly) slideEl.max=maxMonthly;
+    slideEl.value=maxMonthly;
+  }
+  if(side==='advisor') aInvUpdateTotals();
+  else pInvUpdateTotals();
+  toast('💎 Set to max ($'+maxMonthly.toLocaleString()+'/mo)');
 }
 
 // ── CLIENT PORTAL VIEW ────────────────────────────────────────────────────
@@ -4789,6 +4952,7 @@ function renderPInvestments(c,el){
   const {investItems,totalInvestBudget,allocs,activeAccounts,activeIds}=getInvestData(c);
   const totalAlloc=Object.values(allocs).reduce((a,v)=>a+(v||0),0);
   const unalloc=totalInvestBudget-totalAlloc;
+  const A=computeAllocations(c);
 
   // Toggle buttons — identical to advisor
   let html='<div style="display:flex;gap:8px;margin-bottom:14px;flex-wrap:wrap;">'
@@ -4800,6 +4964,7 @@ function renderPInvestments(c,el){
   if(pInvestMode==='view'){
     // ── OVERVIEW: summary tiles + table + charts ──────────────────────────
     const totalBalance=(c.accountInstances||[]).reduce((a,i)=>a+(i.balance||0),0);
+    html+=buildInvestingSequence(c);
     html+='<div class="card card-accent" style="margin-bottom:10px;">'
       +'<div class="ct">Investment summary</div>'
       +'<div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(140px,1fr));gap:1px;background:var(--bd);border-radius:8px;overflow:hidden;margin-bottom:0;">'
@@ -4889,6 +5054,7 @@ function renderPInvestments(c,el){
 
   } else {
     // ── EDIT: sliders ─────────────────────────────────────────────────────
+    html+=buildInvestingSequence(c);
     const _invTotalExp=(c.budget||[]).reduce((a,b)=>a+(b.amount||0),0);
     const _invDebtMin=(c.debts||[]).reduce((a,d)=>a+(d.monthly||0),0);
     const _invGoalTotal=(c.goals||[]).reduce((a,g)=>a+(g.monthly||0),0);
@@ -4943,7 +5109,8 @@ function renderPInvestments(c,el){
       const maxSlide=Math.max(totalInvestBudget||1000,current,500);
       const annualContrib=current*12;
       const overLimit=acct.limit&&annualContrib>acct.limit;
-      const limitStr=acct.limit?'$'+acct.limit.toLocaleString()+'/yr':'No limit';
+      const limitStr=acct.limit?'$'+acct.limit.toLocaleString()+'/yr':(acct.annualGiftLimit?'$'+acct.annualGiftLimit.toLocaleString()+' gift/yr':'No limit');
+      const maxMonthly=acct.limit?Math.round(acct.limit/12):null;
 
       html+='<div style="padding:14px 0;border-bottom:0.5px solid var(--bd);">'
         // Header row: name + badges
@@ -4952,6 +5119,7 @@ function renderPInvestments(c,el){
           +(acct.taxType?'<span style="font-size:10px;font-weight:600;background:var(--sf);padding:2px 8px;border-radius:20px;color:var(--mt);">'+acct.taxType+'</span>':'')
           +'<span style="font-size:10px;font-weight:600;background:var(--sf);padding:2px 8px;border-radius:20px;color:var(--mt);">'+limitStr+'</span>'
           +(overLimit?'<span style="font-size:10px;font-weight:700;background:#FCEBEB;color:#A32D2D;padding:2px 8px;border-radius:20px;">Over limit</span>':'')
+          +(maxMonthly?'<button class="btny" style="font-size:10px;padding:3px 10px;font-weight:700;" onclick="investMaxOut(\''+inst.uid+'\',\''+'client'+'\','+maxMonthly+')">💎 Max out ($'+maxMonthly.toLocaleString()+'/mo)</button>':'')
         +'</div>'
         // Description
         +'<div style="font-size:11px;color:var(--mt);margin-bottom:10px;">'+acct.desc+'</div>'
@@ -4963,7 +5131,7 @@ function renderPInvestments(c,el){
             +'style="width:100px;padding:5px 8px;font-size:13px;font-weight:700;border:1.5px solid var(--bd);border-radius:8px;" />'
         +'</div>'
         // Slider
-        +'<input type="range" id="pinv-'+inst.uid+'" min="0" max="'+maxSlide+'" step="25" value="'+current+'" '
+        +'<input type="range" id="pinv-'+inst.uid+'" min="0" max="'+Math.max(maxSlide,(maxMonthly||0))+'" step="25" value="'+current+'" '
           +'style="width:100%;accent-color:var(--g);margin-bottom:8px;" oninput="pInvSlide(this.id.slice(5))" />'
         // Amount row
         +'<div style="display:flex;align-items:center;justify-content:space-between;gap:8px;">'
@@ -5068,6 +5236,26 @@ function pInvUpdateTotals(){
   if(bar){bar.style.width=pct+'%';bar.style.background=over?'#A32D2D':'#2D7A3A';}
   if(bl) bl.textContent=pct+'% of investing budget allocated'+(over?' — over by $'+Math.abs(unalloc).toLocaleString():'');
   if(br) br.textContent=over?'$'+Math.abs(unalloc).toLocaleString()+' over budget':'$'+unalloc.toLocaleString()+' still available';
+
+  // Live free-margin recalc for portal
+  const fm=document.getElementById('pinv-tile-freemargin');
+  if(fm){
+    const investBudgetInExpenses=(c.budget||[]).filter(b=>{
+      const cat=(b.category||'').toLowerCase(), nm=(b.name||'').toLowerCase();
+      return cat.includes('invest')||cat.includes('saving')||cat.includes('401')||cat.includes('ira')||cat.includes('hsa')
+        ||nm.includes('invest')||nm.includes('ira')||nm.includes('401')||nm.includes('hsa')||nm.includes('saving')||nm.includes('brokerage');
+    }).reduce((a,b)=>a+(b.amount||b.budget||0),0);
+    const extraFromMargin=Math.max(0, total - investBudgetInExpenses);
+    const income=c.income||0;
+    const expenses=(c.budget||[]).reduce((a,b)=>a+(b.amount||b.budget||0),0);
+    const debtMin=(c.debts||[]).reduce((a,d)=>a+(d.monthly||0),0);
+    const margin=income-expenses-debtMin;
+    const goalTotal=(c.goals||[]).reduce((a,g)=>a+(g.monthly||0),0);
+    const snowballExtra=Math.max(0,c.snowballExtra||0);
+    const freeLeft=margin-goalTotal-snowballExtra-extraFromMargin;
+    fm.textContent='$'+freeLeft.toLocaleString()+'/mo';
+    fm.style.color=freeLeft<0?'#A32D2D':'var(--g)';
+  }
 }
 function pInvSaveBudget(){
   const c=portalClient||activeClient;
@@ -5101,9 +5289,11 @@ function pInvSave(){
     const balInp=document.getElementById('pinvbal-'+inst.uid);
     if(balInp) inst.balance=parseFloat(balInp.value)||0;
   });
+  syncClientTotals(c);
   saveClient(c);toast('Investment allocations saved!');
   pInvestMode='view';
   renderPTab();
+  updatePortalHeader();
 }
 
 // ── SHARED: renderCompoundProjections ────────────────────────────────────
@@ -5891,12 +6081,12 @@ function pGoalTimelineColor(monthly,target,current){
 }
 
 function renderPGoals(c,el){
-  const totalExp=c.budget.reduce((a,b)=>a+(b.amount||0),0);
-  const debtMin=(c.debts||[]).reduce((a,d)=>a+(d.monthly||0),0);
-  const margin=Math.max(0,c.income-totalExp-debtMin);
-  const goalTotal=c.goals.reduce((a,g)=>a+(g.monthly||0),0);
-  const snowballExtra=c.snowballExtra||0;
-  const unallocated=margin-goalTotal-snowballExtra;
+  const A=computeAllocations(c);
+  const margin=Math.max(0,A.margin);
+  const goalTotal=A.goalTotal;
+  const snowballExtra=A.snowballExtra;
+  const extraInvestFromMargin=A.extraInvestFromMargin;
+  const unallocated=A.unallocated;
 
   let html='<div style="display:flex;gap:8px;margin-bottom:14px;">'
     +'<button onclick="pGoalsMode=&quot;view&quot;;renderPTab()" style="font-family:inherit;font-size:13px;font-weight:700;padding:8px 20px;border-radius:20px;cursor:pointer;border:2px solid var(--g);background:'+(pGoalsMode==='view'?'var(--g)':'transparent')+';color:'+(pGoalsMode==='view'?'#fff':'var(--g)')+';">Goals overview</button>'
@@ -5909,6 +6099,7 @@ function renderPGoals(c,el){
       +'<div style="background:var(--cd);padding:12px 14px;"><div style="font-size:10px;font-weight:700;color:var(--mt);text-transform:uppercase;margin-bottom:3px;">Free margin</div><div style="font-size:16px;font-weight:700;color:var(--g);">$'+margin.toLocaleString()+'/mo</div></div>'
       +'<div style="background:var(--cd);padding:12px 14px;"><div style="font-size:10px;font-weight:700;color:var(--mt);text-transform:uppercase;margin-bottom:3px;">To goals</div><div style="font-size:16px;font-weight:700;">$'+goalTotal.toLocaleString()+'/mo</div></div>'
       +(snowballExtra>0?'<div style="background:var(--cd);padding:12px 14px;"><div style="font-size:10px;font-weight:700;color:var(--mt);text-transform:uppercase;margin-bottom:3px;">Debt snowball</div><div style="font-size:16px;font-weight:700;color:#BA7517;">$'+snowballExtra.toLocaleString()+'/mo</div></div>':'')
+      +(extraInvestFromMargin>0?'<div style="background:var(--cd);padding:12px 14px;"><div style="font-size:10px;font-weight:700;color:var(--mt);text-transform:uppercase;margin-bottom:3px;">To investments</div><div style="font-size:16px;font-weight:700;color:#185FA5;">$'+extraInvestFromMargin.toLocaleString()+'/mo</div></div>':'')
       +'<div style="background:var(--cd);padding:12px 14px;"><div style="font-size:10px;font-weight:700;color:var(--mt);text-transform:uppercase;margin-bottom:3px;">Goals count</div><div style="font-size:16px;font-weight:700;">'+c.goals.length+' goal'+(c.goals.length!==1?'s':'')+'</div></div>'
       +'<div style="background:var(--cd);padding:12px 14px;"><div style="font-size:10px;font-weight:700;color:var(--mt);text-transform:uppercase;margin-bottom:3px;">Unallocated</div><div style="font-size:16px;font-weight:700;color:'+(unallocated<0?'#A32D2D':unallocated===0?'var(--mt)':'#2D7A3A')+';">$'+unallocated.toLocaleString()+'/mo</div></div>'
       +'</div>';
@@ -5946,7 +6137,7 @@ function renderPGoals(c,el){
           +'</tr>';
       });
       html+='</tbody></table></div>'
-        +buildMarginBreakdown(margin,goalTotal,snowballExtra,unallocated)
+        +buildMarginBreakdown(margin,goalTotal,snowballExtra,unallocated,extraInvestFromMargin)
         +'</div>';
     }
 
@@ -5957,6 +6148,7 @@ function renderPGoals(c,el){
       +'<div style="text-align:center;"><div style="font-size:10px;font-weight:700;color:var(--gd);">FREE MARGIN</div><div style="font-size:20px;font-weight:700;color:var(--g);">$'+margin.toLocaleString()+'/mo</div></div>'
       +'<div style="text-align:center;"><div style="font-size:10px;font-weight:700;color:var(--gd);">TO GOALS</div><div id="p-goal-total-disp" style="font-size:20px;font-weight:700;">$'+goalTotal.toLocaleString()+'/mo</div></div>'
       +(snowballExtra>0?'<div style="text-align:center;"><div style="font-size:10px;font-weight:700;color:var(--gd);">DEBT SNOWBALL</div><div style="font-size:20px;font-weight:700;color:#BA7517;">$'+snowballExtra.toLocaleString()+'/mo</div></div>':'')
+      +(extraInvestFromMargin>0?'<div style="text-align:center;"><div style="font-size:10px;font-weight:700;color:var(--gd);">INVESTMENTS</div><div style="font-size:20px;font-weight:700;color:#185FA5;">$'+extraInvestFromMargin.toLocaleString()+'/mo</div></div>':'')
       +'<div style="text-align:center;"><div style="font-size:10px;font-weight:700;color:var(--gd);">STILL FREE</div><div id="p-unalloc-disp" style="font-size:20px;font-weight:700;color:'+(unallocated>=0?'#2D7A3A':'#A32D2D')+';">$'+unallocated.toLocaleString()+'/mo</div></div>'
       +'</div>'
       +(snowballExtra>0?'<div style="text-align:center;font-size:10px;color:var(--gd);margin-top:8px;opacity:.8;">$'+snowballExtra.toLocaleString()+'/mo is allocated to the debt snowball</div>':'')
@@ -6043,15 +6235,19 @@ function pLiveUpdate(i){pRefreshTimeline(i);pRefreshMarginBanner();}
 function pRefreshMarginBanner(){
   const c=portalClient||activeClient;
   if(!c) return;
-  const totalExp=(c.budget||[]).reduce((a,b)=>a+(b.amount||0),0);
-  const debtMin=(c.debts||[]).reduce((a,d)=>a+(d.monthly||0),0);
-  const margin=Math.max(0,(c.income||0)-totalExp-debtMin);
-  const snowballExtra=c.snowballExtra||0;
+  const A=computeAllocations(c);
+  const margin=Math.max(0,A.margin);
+  const snowballExtra=A.snowballExtra;
+  const extraInvestFromMargin=A.extraInvestFromMargin;
+  // Sum live slider values (edit mode) — fall back to saved values
   let goalTotal=0;
+  let anySlider=false;
   (c.goals||[]).forEach((_,i)=>{
-    goalTotal+=parseInt(document.getElementById('pgm-'+i)?.value)||0;
+    const sv=document.getElementById('pgm-'+i);
+    if(sv){anySlider=true; goalTotal+=parseInt(sv.value)||0;}
   });
-  const unallocated=margin-goalTotal-snowballExtra;
+  if(!anySlider) goalTotal=A.goalTotal;
+  const unallocated=margin-goalTotal-snowballExtra-extraInvestFromMargin;
   const totalEl=document.getElementById('p-goal-total-disp');
   const unallocEl=document.getElementById('p-unalloc-disp');
   if(totalEl) totalEl.textContent='$'+goalTotal.toLocaleString()+'/mo';
@@ -6308,12 +6504,9 @@ function renderSpendingTrends(c, el){
 // ═══════════════════════════════════════
 function renderDebtSnowball(c, el){
   const debts=(c.debts||[]).filter(d=>d.balance>0);
-  const income=c.income||0;
-  const totalExp=c.budget.reduce((a,b)=>a+(b.amount||0),0);
-  const debtMins=debts.reduce((a,d)=>a+(d.monthly||0),0);
-  const goalContribs=(c.goals||[]).reduce((a,g)=>a+(g.monthly||0),0);
-  // True unallocated = income minus expenses, debt minimums, AND goal contributions
-  const totalUnallocated=Math.max(0, income - totalExp - debtMins - goalContribs);
+  const A=computeAllocations(c);
+  // Unallocated available for snowball = margin − goals − invest (everything else already committed)
+  const totalUnallocated=Math.max(0, A.margin - A.goalTotal - A.extraInvestFromMargin);
 
   if(debts.length===0){
     el.innerHTML=`<div class="card card-accent" style="text-align:center;padding:32px;">
@@ -6337,10 +6530,14 @@ function renderDebtSnowball(c, el){
   const remainingUnallocated=totalUnallocated - extra;
   const overBudget=remainingUnallocated < 0;
 
-  // Snowball engine: smallest balance first
+  // Strategy: snowball (smallest balance) or avalanche (highest APR)
+  const strategy=c.debtStrategy||'snowball';
+
+  // Payoff engine — sort by chosen strategy
   function runSnowball(extraPayment){
     let ds=debts.map(d=>({...d,bal:d.balance,paid:false}));
-    ds.sort((a,b)=>a.bal-b.bal);
+    if(strategy==='avalanche') ds.sort((a,b)=>(b.rate||0)-(a.rate||0));
+    else ds.sort((a,b)=>a.bal-b.bal);
     let month=0, totalInterest=0;
     const timeline=[];
     let snowball=extraPayment;
@@ -6375,14 +6572,61 @@ function renderDebtSnowball(c, el){
   const yrs=Math.floor(withExtra.months/12);
   const mos=withExtra.months%12;
   const payoffLabel=yrs>0?(yrs+'yr '+(mos>0?mos+'mo':'')):mos+'mo';
-  const snowballOrder=debts.slice().sort((a,b)=>a.balance-b.balance);
+  const snowballOrder=debts.slice().sort((a,b)=>
+    strategy==='avalanche' ? (b.rate||0)-(a.rate||0) : (a.balance||0)-(b.balance||0)
+  );
 
   // Margin bar: what fraction of unallocated goes to snowball
   const barPct=totalUnallocated>0?Math.min(100,Math.round(extra/totalUnallocated*100)):0;
 
-  el.innerHTML=`
+  const strategyLabel = strategy==='avalanche'?'Highest rate first (avalanche)':'Smallest balance first (snowball)';
+  const strategyTitle = strategy==='avalanche'?'🏔️ Debt avalanche plan':'⛄ Debt snowball plan';
+  const strategySubtext = strategy==='avalanche'
+    ? 'Pay minimums on all debts, dump everything extra on the <strong>highest APR</strong>. This saves the most interest. 💸'
+    : 'Pay minimums on all debts, dump everything extra on the <strong>smallest balance</strong>. Quick wins keep you motivated. 💪';
+  const debtIntroDone = c.debtIntroDone===true;
+
+  // Intake / reassurance card — always visible at the top
+  let introHtml='';
+  if(!debtIntroDone){
+    introHtml=`
+      <div class="card card-accent" style="margin-bottom:10px;border-left:4px solid var(--g);">
+        <div style="font-size:18px;font-weight:700;margin-bottom:6px;">Let's tackle this together 💚</div>
+        <div style="font-size:13px;color:var(--mt);line-height:1.6;margin-bottom:12px;">
+          Debt doesn't define you — a plan does. Almost everyone carries some form of debt at some point (student loans, a car, a mortgage, a credit card from a hard month). What matters now is the next step, not how you got here.
+        </div>
+        <div style="background:var(--sf);border-radius:8px;padding:12px 14px;margin-bottom:12px;">
+          <div style="font-size:12px;font-weight:700;margin-bottom:6px;">A few questions to get oriented:</div>
+          <ul style="margin:0;padding-left:18px;font-size:12px;color:var(--mt);line-height:1.8;">
+            <li><strong>What would you like to pay off first?</strong> The smallest balance (quick wins) or the highest interest rate (saves the most money)?</li>
+            <li><strong>Any debts you want to leave alone?</strong> Low-rate student loans or a mortgage can be fine to pay on schedule while you build elsewhere.</li>
+            <li><strong>How much pressure feels right?</strong> Aggressive payoff vs. balancing with savings and peace of mind.</li>
+          </ul>
+        </div>
+        <button class="btnp" style="padding:9px 20px;font-size:12px;" onclick="dismissDebtIntro()">Got it — let's make a plan</button>
+      </div>`;
+  }
+
+  // Strategy picker
+  const pickerHtml=`
     <div class="card card-accent" style="margin-bottom:10px;">
-      <div class="ct">🏔️ Debt snowball plan</div>
+      <div class="ct">Your payoff strategy</div>
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:10px;">
+        <div onclick="setDebtStrategy('snowball')" style="cursor:pointer;border:2px solid ${strategy==='snowball'?'var(--g)':'var(--bd)'};background:${strategy==='snowball'?'var(--gll)':'var(--cd)'};border-radius:10px;padding:12px;">
+          <div style="font-size:13px;font-weight:700;margin-bottom:3px;">⛄ Snowball</div>
+          <div style="font-size:11px;color:var(--mt);line-height:1.5;">Pay the <strong>smallest balance</strong> first. Feels good fast — perfect when you need momentum.</div>
+        </div>
+        <div onclick="setDebtStrategy('avalanche')" style="cursor:pointer;border:2px solid ${strategy==='avalanche'?'var(--g)':'var(--bd)'};background:${strategy==='avalanche'?'var(--gll)':'var(--cd)'};border-radius:10px;padding:12px;">
+          <div style="font-size:13px;font-weight:700;margin-bottom:3px;">🏔️ Avalanche</div>
+          <div style="font-size:11px;color:var(--mt);line-height:1.5;">Pay the <strong>highest APR</strong> first. Saves the most money long-term — best for high-rate cards.</div>
+        </div>
+      </div>
+      <div style="font-size:11px;color:var(--mt);">Both strategies work — pick the one you'll actually stick with. You can switch anytime.</div>
+    </div>`;
+
+  el.innerHTML=introHtml + pickerHtml + `
+    <div class="card card-accent" style="margin-bottom:10px;">
+      <div class="ct">${strategyTitle}</div>
 
       <!-- Margin allocation banner -->
       <div style="background:var(--sf);border-radius:10px;padding:14px;margin-bottom:14px;">
@@ -6437,7 +6681,7 @@ function renderDebtSnowball(c, el){
       </div>
 
       <!-- Payoff order -->
-      <div class="ct">Payoff order (smallest first)</div>
+      <div class="ct">Payoff order (${strategyLabel})</div>
       ${snowballOrder.map((d,i)=>{
         const rate=(d.rate||0)/100/12;
         let estMos=0;
@@ -6463,7 +6707,7 @@ function renderDebtSnowball(c, el){
       }).join('')}
 
       <div style="background:var(--gll);border-radius:8px;padding:12px;margin-top:12px;font-size:12px;color:var(--gd);line-height:1.6;">
-        <strong>How the snowball works:</strong> Pay minimums on all debts, dump everything extra on the smallest balance. When it's gone, roll that minimum into the next one. The snowball grows with every debt you crush. 💪
+        <strong>How ${strategy==='avalanche'?'the avalanche':'the snowball'} works:</strong> ${strategySubtext} When one debt is cleared, roll its minimum into the next target. Your payoff power grows with every debt you knock out.
       </div>
       ${withExtra.unpayable&&withExtra.unpayable.length>0?`
       <div style="background:#FCEBEB;border-radius:8px;padding:12px;margin-top:8px;font-size:12px;color:#791F1F;line-height:1.6;">
@@ -6474,7 +6718,9 @@ function renderDebtSnowball(c, el){
     <div class="card card-accent" id="debt-snowball-wrap" style="margin-bottom:10px;">
       <div class="ct">Balance payoff timeline</div>
       <canvas id="snowball-chart" height="200"></canvas>
-    </div>`;
+    </div>
+
+    ${buildDebtDeepDive(debts)}`;
 
   window._snowballClient=c;
   window._snowballEl=el;
@@ -6519,6 +6765,106 @@ function renderDebtSnowball(c, el){
       }
     });
   },80);
+}
+
+// Months to payoff given balance, APR%, and monthly payment
+function monthsToPayoff(bal, aprPct, monthly){
+  if(!bal||bal<=0||!monthly||monthly<=0) return Infinity;
+  const r=(aprPct||0)/100/12;
+  if(r===0) return Math.ceil(bal/monthly);
+  if(bal*r>=monthly) return Infinity; // min can't cover interest
+  return Math.ceil(-Math.log(1-(bal*r)/monthly)/Math.log(1+r));
+}
+function totalInterestPaid(bal, aprPct, monthly){
+  const n=monthsToPayoff(bal, aprPct, monthly);
+  if(!isFinite(n)) return Infinity;
+  return Math.max(0, Math.round(monthly*n - bal));
+}
+function formatMonths(n){
+  if(!isFinite(n)) return 'Never';
+  if(n<1) return 'paid';
+  if(n<12) return n+' mo';
+  const y=Math.floor(n/12),m=n%12;
+  return y+'yr'+(m?' '+m+'mo':'');
+}
+
+// Per-debt-type insight/calculator tile
+function buildDebtDeepDive(debts){
+  if(!debts||debts.length===0) return '';
+  const typeInfo={
+    'Car loan':{emoji:'🚗',color:'#0C447C',tip:'A car loan is usually a fixed 3–7 year term. Paying extra principal shortens the loan without affecting your required monthly payment. If your rate is above 7%, aggressive payoff makes sense. Below 5%, invest the extra instead.'},
+    'Mortgage':{emoji:'🏠',color:'#2D7A3A',tip:'A mortgage is <em>generally</em> “good debt” — tax-advantaged, low rate, builds equity. Only prepay if your rate is above ~6% and you have no high-interest debt, no retirement gap, and a full emergency fund. Even $50/mo extra principal shaves years off a 30-year loan.'},
+    'Student loan':{emoji:'🎓',color:'#7B1FA2',tip:'Federal student loans have options private loans don\'t: income-driven repayment (IDR), deferment, PSLF forgiveness, SAVE plan. Before aggressive payoff, check if you qualify for forgiveness. Private loans — treat like any other debt; refinance if you can get a lower rate.'},
+    'Credit card':{emoji:'💳',color:'#A32D2D',tip:'Highest-priority payoff target. Credit card APRs are usually 20–29% — nearly impossible to out-earn with investments. Consider a 0% balance transfer if you qualify, then throw every extra dollar at it. This is the #1 debt that creates debt traps.'},
+    'Personal loan':{emoji:'💰',color:'#BA7517',tip:'Personal loans have fixed terms and rates — usually 7–15%. Treat like a car loan: accelerate payoff if the rate is high, otherwise stay on schedule.'},
+    'Medical debt':{emoji:'🏥',color:'#185FA5',tip:'Medical debt is <strong>negotiable</strong>. Call the billing office and ask for (1) an itemized bill, (2) financial assistance/charity care, (3) a payment plan with 0% interest, (4) a settlement if lump-sum. Never ignore it, but never prioritize it over high-APR debt either.'},
+    'Other':{emoji:'📝',color:'#4B5563',tip:'Every debt has a story. Focus on the rate first — anything above 8% is worth accelerating. Anything below 5% you can often beat by investing instead.'}
+  };
+  let html='<div class="card card-accent" style="margin-bottom:10px;">'
+    +'<div class="ct">Per-debt deep dive</div>'
+    +'<div style="font-size:11px;color:var(--mt);margin-bottom:12px;">Each debt type has different math and different options. Tap any debt to see what makes it unique and how extra payments play out.</div>';
+  debts.forEach((d,i)=>{
+    const t=d.type||'Other';
+    const info=typeInfo[t]||typeInfo['Other'];
+    const minPayoff=monthsToPayoff(d.balance,d.rate,d.monthly);
+    const minInterest=totalInterestPaid(d.balance,d.rate,d.monthly);
+    // Simulate $100 extra and $250 extra
+    const p100=monthsToPayoff(d.balance,d.rate,(d.monthly||0)+100);
+    const p250=monthsToPayoff(d.balance,d.rate,(d.monthly||0)+250);
+    const i100=totalInterestPaid(d.balance,d.rate,(d.monthly||0)+100);
+    const i250=totalInterestPaid(d.balance,d.rate,(d.monthly||0)+250);
+    const save100=isFinite(minInterest)&&isFinite(i100)?minInterest-i100:0;
+    const save250=isFinite(minInterest)&&isFinite(i250)?minInterest-i250:0;
+    // Student-loan specific: show IDR note
+    const extraTypeCTA = t==='Student loan'
+      ? '<div style="font-size:11px;color:var(--mt);margin-top:8px;background:#F3E8FF;border-radius:6px;padding:8px;"><strong>Federal borrower tip:</strong> check studentaid.gov for SAVE / IDR eligibility before accelerating payoff.</div>'
+      : t==='Credit card'
+      ? '<div style="font-size:11px;color:#A32D2D;margin-top:8px;background:#FCEBEB;border-radius:6px;padding:8px;"><strong>At '+(d.rate||0)+'% APR</strong>, every $1,000 balance costs ~$'+Math.round((d.balance||0)*(d.rate||0)/100/12)+'/mo in interest alone. Prioritize this one.</div>'
+      : t==='Mortgage' && (d.rate||0) < 5
+      ? '<div style="font-size:11px;color:var(--mt);margin-top:8px;background:var(--gll);border-radius:6px;padding:8px;"><strong>Low-rate mortgage:</strong> at '+(d.rate||0)+'% APR, you\'re likely better off investing extra cash than prepaying. Run the math before aggressive payoff.</div>'
+      : '';
+    html+='<div style="border:1px solid var(--bd);border-radius:10px;padding:12px 14px;margin-bottom:10px;">'
+      +'<div style="display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:8px;gap:8px;">'
+      +'<div><div style="font-size:14px;font-weight:700;">'+info.emoji+' '+(d.name||'Debt')+'</div>'
+      +'<div style="font-size:11px;color:var(--mt);margin-top:2px;">'+t+' · $'+(d.balance||0).toLocaleString()+' @ '+(d.rate||0)+'% APR · $'+(d.monthly||0)+'/mo min</div></div>'
+      +'<div style="font-size:10px;font-weight:700;background:'+info.color+';color:#fff;padding:3px 10px;border-radius:12px;flex-shrink:0;">'+t+'</div>'
+      +'</div>'
+      +'<div style="font-size:12px;color:var(--mt);line-height:1.6;margin-bottom:10px;">'+info.tip+'</div>'
+      // Payoff comparison grid
+      +'<div style="display:grid;grid-template-columns:repeat(3,1fr);gap:1px;background:var(--bd);border-radius:8px;overflow:hidden;margin-bottom:8px;">'
+      +'<div style="background:var(--cd);padding:9px 10px;"><div style="font-size:9px;font-weight:700;color:var(--mt);text-transform:uppercase;">Min payment only</div><div style="font-size:13px;font-weight:700;margin-top:2px;">'+formatMonths(minPayoff)+'</div><div style="font-size:10px;color:var(--mt);">'+(isFinite(minInterest)?'$'+minInterest.toLocaleString()+' interest':'Min too low!')+'</div></div>'
+      +'<div style="background:var(--cd);padding:9px 10px;"><div style="font-size:9px;font-weight:700;color:var(--mt);text-transform:uppercase;">+$100/mo extra</div><div style="font-size:13px;font-weight:700;margin-top:2px;color:#2D7A3A;">'+formatMonths(p100)+'</div><div style="font-size:10px;color:#2D7A3A;">'+(save100>0?'save $'+save100.toLocaleString():'—')+'</div></div>'
+      +'<div style="background:var(--cd);padding:9px 10px;"><div style="font-size:9px;font-weight:700;color:var(--mt);text-transform:uppercase;">+$250/mo extra</div><div style="font-size:13px;font-weight:700;margin-top:2px;color:#2D7A3A;">'+formatMonths(p250)+'</div><div style="font-size:10px;color:#2D7A3A;">'+(save250>0?'save $'+save250.toLocaleString():'—')+'</div></div>'
+      +'</div>'
+      // Interactive extra-principal calculator
+      +'<div style="background:var(--sf);border-radius:8px;padding:10px;">'
+      +'<div style="display:flex;justify-content:space-between;align-items:center;gap:8px;flex-wrap:wrap;">'
+      +'<label style="font-size:11px;font-weight:600;color:var(--mt);">Try extra principal:</label>'
+      +'<div style="display:flex;align-items:center;gap:4px;flex:1;min-width:140px;">'
+      +'<span style="font-size:12px;color:var(--mt);">+$</span>'
+      +'<input type="number" id="dd-extra-'+i+'" min="0" step="25" placeholder="0" style="flex:1;font-size:13px;font-weight:700;padding:5px 8px;" oninput="debtDeepDiveRecalc('+i+','+(d.balance||0)+','+(d.rate||0)+','+(d.monthly||0)+','+minInterest+')"/>'
+      +'<span style="font-size:11px;color:var(--mt);">/mo</span>'
+      +'</div>'
+      +'<div id="dd-out-'+i+'" style="font-size:11px;font-weight:700;color:var(--mt);min-width:140px;text-align:right;">Enter an amount</div>'
+      +'</div>'
+      +'</div>'
+      +extraTypeCTA
+      +'</div>';
+  });
+  return html+'</div>';
+}
+
+function debtDeepDiveRecalc(i, bal, rate, monthly, minInterest){
+  const inp=document.getElementById('dd-extra-'+i);
+  const out=document.getElementById('dd-out-'+i);
+  if(!inp||!out) return;
+  const extra=Math.max(0,parseInt(inp.value)||0);
+  if(extra===0){out.textContent='Enter an amount';out.style.color='var(--mt)';return;}
+  const n=monthsToPayoff(bal,rate,monthly+extra);
+  const interest=totalInterestPaid(bal,rate,monthly+extra);
+  const saved=isFinite(minInterest)&&isFinite(interest)?minInterest-interest:0;
+  if(!isFinite(n)){out.textContent='Still too low!';out.style.color='#A32D2D';return;}
+  out.innerHTML='<span style="color:#2D7A3A;">'+formatMonths(n)+' · save $'+Math.max(0,saved).toLocaleString()+'</span>';
 }
 
 async function refreshSnowball(){
@@ -6569,13 +6915,37 @@ async function refreshSnowball(){
 function snowballSetMax(){
   const c=window._snowballClient;
   if(!c) return;
-  const income=c.income||0;
-  const totalExp=(c.budget||[]).reduce((a,b)=>a+(b.amount||0),0);
-  const debtMins=(c.debts||[]).reduce((a,d)=>a+(d.monthly||0),0);
-  const goalContribs=(c.goals||[]).reduce((a,g)=>a+(g.monthly||0),0);
-  const max=Math.max(0,income-totalExp-debtMins-goalContribs);
+  const A=computeAllocations(c);
+  const max=Math.max(0, A.margin - A.goalTotal - A.extraInvestFromMargin);
   const inp=document.getElementById('snowball-extra');
   if(inp) inp.value=max;
+  refreshSnowball();
+}
+
+function dismissDebtIntro(){
+  const c=window._snowballClient;
+  if(!c) return;
+  c.debtIntroDone=true;
+  try{
+    localStorage.setItem('lv_client_'+c.id, JSON.stringify(c));
+    if(c.email) localStorage.setItem('lv_client_email_'+c.email.toLowerCase(), JSON.stringify(c));
+    saveDataLocal();
+  }catch(e){}
+  refreshSnowball();
+}
+
+function setDebtStrategy(strategy){
+  const c=window._snowballClient;
+  if(!c) return;
+  c.debtStrategy = (strategy==='avalanche'?'avalanche':'snowball');
+  try{
+    localStorage.setItem('lv_client_'+c.id, JSON.stringify(c));
+    if(c.email) localStorage.setItem('lv_client_email_'+c.email.toLowerCase(), JSON.stringify(c));
+    saveDataLocal();
+  }catch(e){}
+  if(initSupabase()){
+    sb.from('clients').upsert(serializeClient(c),{onConflict:'id'}).catch(()=>{});
+  }
   refreshSnowball();
 }
 
